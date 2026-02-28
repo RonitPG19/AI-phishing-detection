@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tribunal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="popup.css" />
+</head>
+
+<body data-theme="light">
+    <div id="app">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <img src="logo.png" alt="Tribunal Logo" class="header-logo" />
+                <h1 class="header-title">tribunal</h1>
+            </div>
+        </header>
+
+        <!-- Page Container -->
+        <main id="page-container" class="page-container"></main>
+
+        <!-- Bottom Tab Bar -->
+        <nav class="tab-bar" role="tablist" aria-label="Main navigation">
+            <button class="tab-item active" data-page="scan" role="tab" aria-selected="true"
+                aria-controls="page-container">
+                <i data-icon="scan-search"></i>
+                <span>Scan</span>
+            </button>
+            <button class="tab-item" data-page="history" role="tab" aria-selected="false"
+                aria-controls="page-container">
+                <i data-icon="clock"></i>
+                <span>History</span>
+            </button>
+            <button class="tab-item" data-page="settings" role="tab" aria-selected="false"
+                aria-controls="page-container">
+                <i data-icon="settings"></i>
+                <span>Settings</span>
+            </button>
+        </nav>
+    </div>
+
+    <script type="module" src="popup.js"></script>
+</body>
+
+</html>
