@@ -344,4 +344,4 @@ Authorization: Bearer FIREBASE_TOKEN
 
 # 👨‍💻 Author
 
-Kenil Patel 🚀
+Kenil Patel
