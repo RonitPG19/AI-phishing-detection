@@ -81,3 +81,8 @@ build/
 # --------------------
 coverage/
 .cache/
+
+# --------------------
+# Keys of the Firebase
+# --------------------
+serviceAccountKey.json
