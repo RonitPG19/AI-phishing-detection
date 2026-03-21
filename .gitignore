@@ -58,6 +58,8 @@ yarn-error.log*
 *.xls
 *.json
 *.db
+!backend/scanner-app/src/main/resources/top-1m-Tranco.csv
+!backend/scanner-app/src/main/resources/top-1m-umbrella.csv
 
 # --------------------
 # ML Models
@@ -81,3 +83,39 @@ build/
 # --------------------
 coverage/
 .cache/
+
+HELP.md
+target/
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+
+backend/scanner-app/src/main/resources/application.properties

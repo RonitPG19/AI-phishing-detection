@@ -1,0 +1,2 @@
+Main-Class: Main
+Class-Path: jakarta.activation-2.0.1.jar jakarta.mail-2.0.1.jar jsoup-1.18.3.jar

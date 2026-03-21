@@ -1,0 +1,2 @@
+spring.application.name=scanner-app
+spring.security.enabled=false
