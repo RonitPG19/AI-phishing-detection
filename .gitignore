@@ -33,6 +33,7 @@ yarn-error.log*
 # --------------------
 .vscode/
 .idea/
+*.iml
 
 # --------------------
 # Logs
@@ -43,7 +44,6 @@ yarn-error.log*
 # Environment Variables
 # --------------------
 .env
-
 
 # --------------------
 # Jupyter
@@ -58,6 +58,8 @@ yarn-error.log*
 *.xls
 *.json
 *.db
+
+# Allow ONLY these CSV files
 !backend/scanner-app/src/main/resources/top-1m-Tranco.csv
 !backend/scanner-app/src/main/resources/top-1m-umbrella.csv
 
@@ -69,6 +71,21 @@ yarn-error.log*
 *.h5
 *.ckpt
 *.onnx
+
+# --------------------
+# Java / Maven
+# --------------------
+target/
+*.class
+HELP.md
+
+# Keep Maven wrapper + config
+!mvnw
+!mvnw.cmd
+!pom.xml
+
+# Ignore sensitive config
+backend/scanner-app/src/main/resources/application.properties
 
 # --------------------
 # Android
@@ -85,6 +102,6 @@ coverage/
 .cache/
 
 # --------------------
-# Keys of the Firebase
+# Firebase Keys
 # --------------------
 serviceAccountKey.json
