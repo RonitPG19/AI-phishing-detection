@@ -105,3 +105,6 @@ coverage/
 # Firebase Keys
 # --------------------
 serviceAccountKey.json
+# Keep web app config
+!web/**/*.json
+!web/package-lock.json
