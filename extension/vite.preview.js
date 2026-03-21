@@ -1,8 +1,8 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-    server: {
-        port: 5173,
-        open: '/popup.html'
-    }
+  server: {
+    port: 5173,
+    open: '/src/popup/popup.html'
+  }
 });

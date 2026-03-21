@@ -902,6 +902,18 @@ body {
     font-weight: var(--font-weight-medium);
 }
 
+.settings-label-group {
+    display: grid;
+    gap: 2px;
+    max-width: 220px;
+}
+
+.settings-caption {
+    font-size: var(--font-size-sm);
+    color: var(--text-tertiary);
+    line-height: 1.5;
+}
+
 /* Toggle Switch */
 .toggle {
     position: relative;
@@ -1159,4 +1171,56 @@ body {
     overflow: hidden;
     clip: rect(0, 0, 0, 0);
     border: 0;
+}
+
+/* ---------- Debug Page ---------- */
+.debug-intro {
+    font-size: var(--font-size-sm);
+    color: var(--text-tertiary);
+    line-height: 1.65;
+    margin-top: var(--space-2);
+}
+
+.debug-meta {
+    margin-top: var(--space-2);
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+}
+
+.debug-actions {
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-4);
+}
+
+.debug-card {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background: var(--bg-secondary);
+    padding: var(--space-4);
+    margin-bottom: var(--space-3);
+}
+
+.debug-card-title {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+    margin-bottom: var(--space-3);
+    letter-spacing: var(--letter-normal);
+}
+
+.debug-pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 11.5px;
+    line-height: 1.65;
+    color: var(--text-secondary);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    max-height: 220px;
+    overflow: auto;
 }

@@ -1,3 +1,5 @@
+import { saveWidgetPreferences, getLastScanDebug } from '../shared/storage.js';
+
   /* ============================================
    TRIBUNAL — Core Extension Logic
    ============================================ */
@@ -145,12 +147,9 @@ let historyDetailIndex = null;
 
 // ─── Storage Helpers ─────────────────────────
 function getSettings() {
-  try {
-    const raw = localStorage.getItem('tribunal_settings');
-    if (raw) return JSON.parse(raw);
-  } catch (e) { /* fallback */ }
-  return {
+  const defaults = {
     enabled: true,
+    floatingPopupEnabled: true,
     theme: 'light',
     scanPortions: {
       header: true,
@@ -161,6 +160,23 @@ function getSettings() {
       attachments: true
     }
   };
+
+  try {
+    const raw = localStorage.getItem('tribunal_settings');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        ...defaults,
+        ...parsed,
+        scanPortions: {
+          ...defaults.scanPortions,
+          ...(parsed.scanPortions || {})
+        }
+      };
+    }
+  } catch (e) { /* fallback */ }
+
+  return defaults;
 }
 
 function saveSettings(s) {
@@ -419,6 +435,17 @@ function renderSettingsPage() {
             <span class="toggle-thumb"></span>
           </label>
         </div>
+        <div class="settings-row">
+          <div class="settings-label-group">
+            <span class="settings-label">Floating popup</span>
+            <span class="settings-caption">Show the in-page Tribunal widget on Gmail and Outlook.</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="setting-floating-popup" ${s.floatingPopupEnabled ? 'checked' : ''} aria-label="Toggle floating popup">
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </label>
+        </div>
       </div>
 
       <div class="settings-section">
@@ -460,6 +487,55 @@ function renderSettingsPage() {
   injectIcons(container);
 }
 
+async function renderDebugPage() {
+  const container = document.getElementById('page-container');
+  container.innerHTML = `
+    <div class="page-enter">
+      <div class="settings-section">
+        <div class="settings-section-title">
+          <i data-icon="file-text"></i> Debug Payload
+        </div>
+        <p class="debug-intro">Inspect the exact normalized JSON currently being generated before it goes to the API layer.</p>
+      </div>
+      <div class="scan-loading">
+        <div class="spinner" aria-label="Loading debug data"></div>
+        <p class="scan-loading-text">Loading debug snapshot?</p>
+      </div>
+    </div>`;
+  injectIcons(container);
+
+  const debug = await getLastScanDebug();
+  const updatedLabel = debug.updatedAt ? formatTimestamp(debug.updatedAt) : 'No scan yet';
+
+  container.innerHTML = `
+    <div class="page-enter">
+      <div class="settings-section">
+        <div class="settings-section-title">
+          <i data-icon="file-text"></i> Debug Payload
+        </div>
+        <p class="debug-intro">Inspect the exact normalized JSON currently being generated before it goes to the API layer.</p>
+        <p class="debug-meta">Last updated: ${updatedLabel}</p>
+      </div>
+
+      <div class="debug-actions">
+        <button class="btn-secondary" id="refresh-debug-btn"><i data-icon="rotate-ccw"></i> Refresh</button>
+        <button class="btn-secondary" id="copy-debug-payload-btn"><i data-icon="clipboard"></i> Copy Payload</button>
+        <button class="btn-secondary" id="copy-debug-result-btn"><i data-icon="clipboard"></i> Copy Result</button>
+      </div>
+
+      <div class="debug-card">
+        <div class="debug-card-title">Payload JSON</div>
+        <pre class="debug-pre">${escapeHtml(prettyJson(debug.payload))}</pre>
+      </div>
+
+      <div class="debug-card">
+        <div class="debug-card-title">Result JSON</div>
+        <pre class="debug-pre">${escapeHtml(prettyJson(debug.result))}</pre>
+      </div>
+    </div>`;
+  injectIcons(container);
+}
+
 // ─── Navigation ──────────────────────────────
 function navigateTo(page) {
   currentPage = page;
@@ -481,6 +557,7 @@ function renderCurrentPage() {
   switch (currentPage) {
     case 'scan': renderScanPage(); break;
     case 'history': renderHistoryPage(); break;
+    case 'debug': renderDebugPage(); break;
     case 'settings': renderSettingsPage(); break;
   }
 }
@@ -549,6 +626,17 @@ document.addEventListener('click', e => {
   if (e.target.closest('#scan-btn')) { startScan(); return; }
   if (e.target.closest('#scan-again-btn')) { scanResults = null; renderScanPage(); return; }
   if (e.target.closest('#copy-report-btn')) { copyReport(); return; }
+  if (e.target.closest('#refresh-debug-btn')) { renderDebugPage(); return; }
+
+  if (e.target.closest('#copy-debug-payload-btn')) {
+    getLastScanDebug().then(debug => navigator.clipboard.writeText(prettyJson(debug.payload)));
+    return;
+  }
+
+  if (e.target.closest('#copy-debug-result-btn')) {
+    getLastScanDebug().then(debug => navigator.clipboard.writeText(prettyJson(debug.result)));
+    return;
+  }
 
   const sectionHeader = e.target.closest('.section-header');
   if (sectionHeader) {
@@ -587,6 +675,13 @@ document.addEventListener('change', e => {
 
   if (e.target.id === 'setting-enabled') { s.enabled = e.target.checked; saveSettings(s); return; }
 
+  if (e.target.id === 'setting-floating-popup') {
+    s.floatingPopupEnabled = e.target.checked;
+    saveSettings(s);
+    saveWidgetPreferences({ enabled: s.floatingPopupEnabled });
+    return;
+  }
+
   if (e.target.name === 'theme') {
     s.theme = e.target.value;
     applyTheme(s.theme);
@@ -612,6 +707,7 @@ document.addEventListener('keydown', e => {
 function init() {
   const s = getSettings();
   applyTheme(s.theme);
+  saveWidgetPreferences({ enabled: s.floatingPopupEnabled });
 
   if (getHistory().length === 0) {
     const seeded = MOCK_HISTORY_EXTRA.map(item => ({ ...item, timestamp: item.timestamp }));
