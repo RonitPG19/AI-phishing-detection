@@ -1,4 +1,5 @@
-﻿import { Button } from "@/components/ui/button"
+import { getPathForRoute } from "@/lib/routing"
+import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
@@ -14,7 +15,14 @@ import {
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 
-export function SignupForm({ className, ...props }) {
+export function SignupForm({ className, onNavigate, ...props }) {
+  const handleRouteLink = (event, route) => {
+    if (!onNavigate) return
+
+    event.preventDefault()
+    onNavigate(route)
+  }
+
   return (
     <Card className={className} {...props}>
       <CardHeader>
@@ -52,7 +60,8 @@ export function SignupForm({ className, ...props }) {
                   Sign up with Google
                 </Button>
                 <FieldDescription className="px-6 text-center">
-                  Already have an account? <a href="#login">Sign in</a>
+                  Already have an account?{" "}
+                  <a href={getPathForRoute("login")} onClick={(event) => handleRouteLink(event, "login")}>Sign in</a>
                 </FieldDescription>
               </Field>
             </FieldGroup>

@@ -1,10 +1,11 @@
-﻿import { useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { AdminHeader } from "@/components/layout/AdminHeader"
 import { AdminSidebar } from "@/components/layout/AdminSidebar"
 import { BottomNav } from "@/components/layout/BottomNav"
 import { pageMeta } from "@/lib/dashboard-data"
+import { getPathForRoute, getRouteFromPath } from "@/lib/routing"
 import { LoginPage } from "@/pages/LoginPage"
 import { OverviewPage } from "@/pages/OverviewPage"
 import { ReportsPage } from "@/pages/ReportsPage"
@@ -26,29 +27,26 @@ const authComponents = {
   signup: SignupPage,
 }
 
-function getRouteFromHash() {
+function getCurrentRoute() {
   if (typeof window === "undefined") return "overview"
 
-  const route = window.location.hash.replace("#", "")
-  if (pageComponents[route] || authComponents[route]) return route
-
-  return "overview"
+  return getRouteFromPath(window.location.pathname)
 }
 
 export default function App() {
-  const [route, setRoute] = useState(getRouteFromHash)
+  const [route, setRoute] = useState(getCurrentRoute)
   const [theme, setTheme] = useState(() => {
     if (typeof window === "undefined") return "light"
     return localStorage.getItem("tribunal_admin_theme") || "light"
   })
 
   useEffect(() => {
-    const handleHashChange = () => setRoute(getRouteFromHash())
+    const handlePopState = () => setRoute(getCurrentRoute())
 
-    window.addEventListener("hashchange", handleHashChange)
-    handleHashChange()
+    window.addEventListener("popstate", handlePopState)
+    handlePopState()
 
-    return () => window.removeEventListener("hashchange", handleHashChange)
+    return () => window.removeEventListener("popstate", handlePopState)
   }, [])
 
   useEffect(() => {
@@ -58,13 +56,25 @@ export default function App() {
   }, [theme])
 
   const navigateTo = (nextRoute) => {
-    window.location.hash = nextRoute
+    const nextPath = getPathForRoute(nextRoute)
+
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState({}, "", nextPath)
+    }
+
+    setRoute(nextRoute)
   }
 
   if (authComponents[route]) {
     const AuthPage = authComponents[route]
 
-    return <AuthPage theme={theme} onThemeToggle={() => setTheme(theme === "dark" ? "light" : "dark")} />
+    return (
+      <AuthPage
+        theme={theme}
+        onNavigate={navigateTo}
+        onThemeToggle={() => setTheme(theme === "dark" ? "light" : "dark")}
+      />
+    )
   }
 
   const ActivePage = pageComponents[route]

@@ -1,15 +1,27 @@
-﻿import { Moon, ShieldCheck, Sun } from "lucide-react"
+import { Moon, ShieldCheck, Sun } from "lucide-react"
 
 import { LoginForm } from "@/components/LoginForm"
 import { Button } from "@/components/ui/button"
+import { getPathForRoute } from "@/lib/routing"
 
-export function LoginPage({ theme, onThemeToggle }) {
+export function LoginPage({ theme, onNavigate, onThemeToggle }) {
+  const handleNavigate = (event, route) => {
+    if (!onNavigate) return
+
+    event.preventDefault()
+    onNavigate(route)
+  }
+
   return (
     <main className="min-h-screen bg-background px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-6xl flex-col gap-8 lg:grid lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
         <section className="flex flex-col justify-between rounded-[2rem] border border-border bg-card p-6 sm:p-8 lg:min-h-[720px]">
           <div className="flex items-center justify-between gap-4">
-            <a href="#overview" className="flex items-center gap-3">
+            <a
+              href={getPathForRoute("overview")}
+              className="flex items-center gap-3"
+              onClick={(event) => handleNavigate(event, "overview")}
+            >
               <div className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-background">
                 <img src="/tribunal-logo.png" alt="Tribunal logo" className="h-5 w-5" />
               </div>
@@ -53,7 +65,7 @@ export function LoginPage({ theme, onThemeToggle }) {
         </section>
 
         <section className="mx-auto flex w-full max-w-md items-center justify-center">
-          <LoginForm className="w-full" />
+          <LoginForm className="w-full" onNavigate={onNavigate} />
         </section>
       </div>
     </main>
