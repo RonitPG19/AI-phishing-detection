@@ -26,7 +26,13 @@ const ICONS = {
 const SETTINGS_KEY = 'tribunal_settings';
 const HISTORY_KEY = 'tribunal_history';
 const MAX_HISTORY_ENTRIES = 50;
-const SUPPORTED_MAIL_HOSTS = ['mail.google.com', 'outlook.live.com', 'outlook.office.com', 'outlook.office365.com'];
+const SUPPORTED_MAIL_HOSTS = [
+  'mail.google.com',
+  'outlook.cloud.microsoft',
+  'outlook.live.com',
+  'outlook.office.com',
+  'outlook.office365.com'
+];
 const DEFAULT_SETTINGS = {
   enabled: true,
   floatingPopupEnabled: true,
@@ -129,6 +135,34 @@ function truncate(value = '', maxLength = 48) {
 function getIssueCount(result) {
   return Object.values(result.sections || {}).reduce((count, section) => count + (section?.issues?.length || 0), 0);
 }
+
+function getResultSource(result) {
+  const source = String(result?.source || '').toLowerCase();
+  if (source === 'mock') {
+    return 'mock';
+  }
+
+  if (source === 'api') {
+    return 'api';
+  }
+
+  return result ? 'api' : 'unknown';
+}
+
+function getResultSourceLabel(result) {
+  const source = getResultSource(result);
+
+  if (source === 'mock') {
+    return 'Mock Preview';
+  }
+
+  if (source === 'api') {
+    return 'API Response';
+  }
+
+  return 'Unknown Source';
+}
+
 function renderIssueCard(issue, sectionKey, index) {
   const issueId = `${sectionKey}-${index}`;
   const detailRows = String(issue.details || '')
@@ -186,6 +220,7 @@ function renderResultView(result) {
     <div class="results-summary">
       <div class="results-threat-label">${escapeHtml(String(result.overallThreat || 'safe').toUpperCase())} RISK</div>
       <div class="results-issue-count">${issueCount} issue${issueCount === 1 ? '' : 's'} found</div>
+      <div class="results-source">Source: ${escapeHtml(getResultSourceLabel(result))}</div>
     </div>
     <div class="section-group">${Object.entries(result.sections || {}).map(([key, section]) => renderSection(key, section)).join('')}</div>
     <div class="results-actions">
@@ -226,7 +261,7 @@ function renderHistoryPage() {
   if (historyDetailIndex !== null && history[historyDetailIndex]) {
     const result = history[historyDetailIndex];
     const issueCount = getIssueCount(result);
-    container.innerHTML = `<div class="page-enter"><button class="back-btn" id="history-back-btn"><i data-icon="arrow-left"></i> Back to History</button><div class="results-summary"><div class="results-threat-label">${escapeHtml(String(result.overallThreat || 'safe').toUpperCase())} RISK</div><div class="results-issue-count">${issueCount} issue${issueCount === 1 ? '' : 's'} found</div><p style="margin-top:4px;font-size:12px;color:var(--text-muted)">${escapeHtml(formatTimestamp(result.timestamp))} - ${escapeHtml(truncate(result.emailSubject || 'Current message', 52))}</p></div><div class="section-group">${Object.entries(result.sections || {}).map(([key, section]) => renderSection(key, section)).join('')}</div></div>`;
+    container.innerHTML = `<div class="page-enter"><button class="back-btn" id="history-back-btn"><i data-icon="arrow-left"></i> Back to History</button><div class="results-summary"><div class="results-threat-label">${escapeHtml(String(result.overallThreat || 'safe').toUpperCase())} RISK</div><div class="results-issue-count">${issueCount} issue${issueCount === 1 ? '' : 's'} found</div><div class="results-source">Source: ${escapeHtml(getResultSourceLabel(result))}</div><p style="margin-top:4px;font-size:12px;color:var(--text-muted)">${escapeHtml(formatTimestamp(result.timestamp))} - ${escapeHtml(truncate(result.emailSubject || 'Current message', 52))}</p></div><div class="section-group">${Object.entries(result.sections || {}).map(([key, section]) => renderSection(key, section)).join('')}</div></div>`;
     injectIcons(container);
     return;
   }
@@ -237,7 +272,7 @@ function renderHistoryPage() {
     return;
   }
 
-  container.innerHTML = `<div class="page-enter"><div class="history-list">${history.map((entry, index) => `<div class="history-entry" data-history-index="${index}" role="button" tabindex="0" aria-label="View scan from ${escapeHtml(formatTimestamp(entry.timestamp))}"><div class="history-entry-info"><div class="history-entry-subject">${escapeHtml(truncate(entry.emailSubject || 'Current message'))}</div><div class="history-entry-time">${escapeHtml(formatTimestamp(entry.timestamp))}</div></div><span class="badge badge-${escapeHtml(entry.overallThreat || 'safe')}">${escapeHtml(entry.overallThreat || 'safe')}</span><i data-icon="chevron-right" class="history-entry-arrow"></i></div>`).join('')}</div><div class="history-clear-wrap"><button class="btn-danger" id="clear-history-btn"><i data-icon="trash-2"></i> Clear History</button></div></div>`;
+  container.innerHTML = `<div class="page-enter"><div class="history-list">${history.map((entry, index) => `<div class="history-entry" data-history-index="${index}" role="button" tabindex="0" aria-label="View scan from ${escapeHtml(formatTimestamp(entry.timestamp))}"><div class="history-entry-info"><div class="history-entry-subject">${escapeHtml(truncate(entry.emailSubject || 'Current message'))}</div><div class="history-entry-time">${escapeHtml(formatTimestamp(entry.timestamp))} - ${escapeHtml(getResultSourceLabel(entry))}</div></div><span class="badge badge-${escapeHtml(entry.overallThreat || 'safe')}">${escapeHtml(entry.overallThreat || 'safe')}</span><i data-icon="chevron-right" class="history-entry-arrow"></i></div>`).join('')}</div><div class="history-clear-wrap"><button class="btn-danger" id="clear-history-btn"><i data-icon="trash-2"></i> Clear History</button></div></div>`;
   injectIcons(container);
 }
 
@@ -255,7 +290,7 @@ async function renderDebugPage() {
   injectIcons(container);
 
   const debug = await getLastScanDebug();
-  container.innerHTML = `<div class="page-enter"><div class="settings-section"><div class="settings-section-title"><i data-icon="file-text"></i> Debug Payload</div><p class="debug-intro">Inspect the exact normalized JSON produced by the most recent scan.</p><p class="debug-meta">Last updated: ${escapeHtml(debug.updatedAt ? formatTimestamp(debug.updatedAt) : 'No scan yet')}</p></div><div class="debug-actions"><button class="btn-secondary" id="refresh-debug-btn"><i data-icon="rotate-ccw"></i> Refresh</button><button class="btn-secondary" id="copy-debug-payload-btn"><i data-icon="clipboard"></i> Copy Payload</button><button class="btn-secondary" id="copy-debug-result-btn"><i data-icon="clipboard"></i> Copy Result</button></div><div class="debug-card"><div class="debug-card-title">Payload JSON</div><pre class="debug-pre">${escapeHtml(prettyJson(debug.payload))}</pre></div><div class="debug-card"><div class="debug-card-title">Result JSON</div><pre class="debug-pre">${escapeHtml(prettyJson(debug.result))}</pre></div></div>`;
+  container.innerHTML = `<div class="page-enter"><div class="settings-section"><div class="settings-section-title"><i data-icon="file-text"></i> Debug Payload</div><p class="debug-intro">Inspect the exact normalized JSON produced by the most recent scan.</p><p class="debug-meta">Last updated: ${escapeHtml(debug.updatedAt ? formatTimestamp(debug.updatedAt) : 'No scan yet')}</p><p class="debug-meta">Result source: ${escapeHtml(debug.result ? getResultSourceLabel(debug.result) : 'No result yet')}</p></div><div class="debug-actions"><button class="btn-secondary" id="refresh-debug-btn"><i data-icon="rotate-ccw"></i> Refresh</button><button class="btn-secondary" id="copy-debug-payload-btn"><i data-icon="clipboard"></i> Copy Payload</button><button class="btn-secondary" id="copy-debug-result-btn"><i data-icon="clipboard"></i> Copy Result</button></div><div class="debug-card"><div class="debug-card-title">Payload JSON</div><pre class="debug-pre">${escapeHtml(prettyJson(debug.payload))}</pre></div><div class="debug-card"><div class="debug-card-title">Result JSON</div><pre class="debug-pre">${escapeHtml(prettyJson(debug.result))}</pre></div></div>`;
   injectIcons(container);
 }
 function navigateTo(page) {

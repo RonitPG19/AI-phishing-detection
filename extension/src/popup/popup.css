@@ -471,6 +471,12 @@ body {
     font-weight: var(--font-weight-regular);
 }
 
+.results-source {
+    margin-top: var(--space-2);
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+}
+
 /* ---------- Expandable Sections ---------- */
 .section-group {
     display: flex;
