@@ -34,11 +34,21 @@ npm install
 
 ## Build
 
+### Chromium / Thorium build
+
 ```bash
 npm run build
 ```
 
-The unpacked extension build is generated in `extension/dist`.
+The unpacked Chromium-compatible build is generated in `extension/dist`.
+
+### Firefox build
+
+```bash
+npm run build:firefox
+```
+
+The Firefox-compatible temporary add-on build is generated in `extension/dist-firefox`.
 
 ## Run In Browser
 
@@ -55,6 +65,18 @@ After code changes:
 2. Reload the unpacked extension
 3. Refresh the Gmail / Outlook tab
 
+### Firefox
+
+1. Open `about:debugging#/runtime/this-firefox`.
+2. Click `Load Temporary Add-on`.
+3. Select `extension/dist-firefox/manifest.json`.
+
+After code changes:
+
+1. Run `npm run build:firefox`
+2. Reload the temporary add-on
+3. Refresh the Gmail / Outlook tab
+
 ## Folder Structure
 
 ```text
@@ -62,6 +84,8 @@ extension/
   public/
     icons/
     logo.png
+  scripts/
+    prepare-firefox-build.mjs
   src/
     background/
       api-client.js
@@ -94,6 +118,12 @@ Static assets copied into the final extension build.
 
 - `icons/`: extension icons referenced by `manifest.json`
 - `logo.png`: Tribunal logo used by popup and in-page widget
+
+### `scripts/`
+
+Build helpers.
+
+- `prepare-firefox-build.mjs`: patches the generated manifest into a Firefox-compatible temporary add-on build
 
 ### `src/background/`
 
@@ -200,6 +230,7 @@ This internal shape can be trimmed later to match the exact backend contract.
 - Mock scan result generation
 - Storage-backed debug payload/result capture
 - Thorium / Chromium-based browser testing
+- Firefox-specific build output generation
 
 ## Remaining
 
@@ -208,7 +239,7 @@ This internal shape can be trimmed later to match the exact backend contract.
 - Implement authentication if backend requests must be protected
 - Decide whether provider APIs are needed for reliable header retrieval
 - Refine and validate Outlook extraction on real Outlook mailboxes
-- Finish Firefox compatibility and test on Firefox
+- Validate the Firefox build on real Gmail / Outlook sessions
 - Complete final popup/widget UX parity checks
 
 ## Current Limitations
@@ -218,10 +249,11 @@ This internal shape can be trimmed later to match the exact backend contract.
 - `bodyHtml` is intentionally retained for downstream scanning, but some emails still produce large / noisy HTML payloads.
 - Link extraction currently captures visible message links, including tracking or newsletter links when they are part of the email body.
 - Outlook extraction is only a first pass and has not yet been validated against enough real Outlook message layouts.
-- The popup debug storage path exists, but popup-level debug access still needs one final UX pass to make inspection more obvious.
+- Popup-level debug access still needs one final UX pass to make inspection more obvious.
+- Firefox compatibility now has a dedicated build path, but runtime validation is still pending.
 
 ## Current Testing Status
 
 - Tested on Thorium (Chromium-based)
-- Firefox testing is still pending
+- Firefox compatibility build prepared, runtime validation pending
 - Outlook validation is still pending

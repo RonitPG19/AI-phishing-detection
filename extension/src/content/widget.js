@@ -1,6 +1,6 @@
 ﻿import { getWidgetState, saveWidgetState } from '../shared/storage.js';
 
-const WIDGET_HOST_ID = 'tribunal-floating-widget-host';
+export const WIDGET_HOST_ID = 'tribunal-floating-widget-host';
 
 const ICONS = {
   chevron: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`,
@@ -17,6 +17,21 @@ function getLogoUrl() {
 
 function getFallbackIconUrl() {
   return chrome.runtime.getURL('icons/icon48.png');
+}
+
+function getClampedPosition(position, width = 320, height = 520) {
+  if (!position || position.left == null || position.top == null) {
+    return null;
+  }
+
+  const padding = 8;
+  const maxLeft = Math.max(padding, window.innerWidth - width - padding);
+  const maxTop = Math.max(padding, window.innerHeight - height - padding);
+
+  return {
+    left: Math.min(Math.max(position.left, padding), maxLeft),
+    top: Math.min(Math.max(position.top, padding), maxTop)
+  };
 }
 
 function escapeHtml(value = '') {
@@ -147,9 +162,11 @@ export async function createFloatingWidget({ provider, onScan }) {
   host.style.right = '24px';
   host.style.bottom = '24px';
 
-  if (storedState.position?.left != null && storedState.position?.top != null) {
-    host.style.left = `${storedState.position.left}px`;
-    host.style.top = `${storedState.position.top}px`;
+  const clampedPosition = getClampedPosition(storedState.position);
+
+  if (clampedPosition) {
+    host.style.left = `${clampedPosition.left}px`;
+    host.style.top = `${clampedPosition.top}px`;
     host.style.right = 'auto';
     host.style.bottom = 'auto';
   }
@@ -586,7 +603,7 @@ export async function createFloatingWidget({ provider, onScan }) {
     </button>
   `;
 
-  document.documentElement.appendChild(host);
+  (document.body || document.documentElement).appendChild(host);
 
   const panel = shadow.querySelector('.panel');
   const bubble = shadow.querySelector('.bubble');
@@ -601,6 +618,21 @@ export async function createFloatingWidget({ provider, onScan }) {
     logo.addEventListener('error', () => {
       logo.src = getFallbackIconUrl();
     }, { once: true });
+  });
+
+  window.addEventListener('resize', async () => {
+    const rect = host.getBoundingClientRect();
+    const nextPosition = getClampedPosition({ left: rect.left, top: rect.top }, rect.width || 320, rect.height || 520);
+
+    if (!nextPosition) {
+      return;
+    }
+
+    host.style.left = `${nextPosition.left}px`;
+    host.style.top = `${nextPosition.top}px`;
+    host.style.right = 'auto';
+    host.style.bottom = 'auto';
+    await saveWidgetState({ position: nextPosition });
   });
 
   function applyMinimizedState(minimized) {
