@@ -1,4 +1,4 @@
-﻿function isVisible(element) {
+function isVisible(element) {
   if (!element) {
     return false;
   }
@@ -12,12 +12,103 @@
   return rect.width > 0 && rect.height > 0;
 }
 
-function getText(element) {
-  return (element?.textContent || '').replace(/\s+/g, ' ').trim();
+function stripInvisibleCharacters(value = '') {
+  return String(value).replace(/[\u00ad\u034f\u061c\u200b-\u200f\u2060-\u206f\ufeff]/g, '');
 }
 
-function getInnerText(element) {
-  return (element?.innerText || '').replace(/\s+\n/g, '\n').trim();
+function getText(element) {
+  return stripInvisibleCharacters(element?.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
+function findEmail(value = '') {
+  return value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || '';
+}
+
+function getReadableText(element) {
+  if (!element) {
+    return '';
+  }
+
+  return stripInvisibleCharacters(element.innerText || '')
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
+function getNodeTop(element) {
+  return element?.getBoundingClientRect?.().top ?? Number.POSITIVE_INFINITY;
+}
+
+function getLinkRect(link) {
+  return link?.getBoundingClientRect?.() || { width: 0, height: 0 };
+}
+
+function getHostname(href) {
+  try {
+    return new URL(href).hostname;
+  } catch {
+    return '';
+  }
+}
+
+function getLinkText(link) {
+  if (!link) {
+    return '';
+  }
+
+  const imageAlt = Array.from(link.querySelectorAll('img[alt]'))
+    .map((image) => image.getAttribute('alt') || '')
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .join(' ');
+
+  const rawText = getText(link) || link.getAttribute('aria-label') || link.getAttribute('title') || imageAlt;
+  const normalized = stripInvisibleCharacters(rawText).replace(/\s+/g, ' ').trim();
+
+  if (normalized) {
+    return normalized;
+  }
+
+  const rect = getLinkRect(link);
+  const hostname = getHostname(link.href);
+  const hasImage = Boolean(link.querySelector('img'));
+
+  if (hasImage && (rect.width >= 32 || rect.height >= 20)) {
+    return hostname ? `[image link] ${hostname}` : '[image link]';
+  }
+
+  if (rect.width >= 96 || rect.height >= 28) {
+    return hostname ? `[button link] ${hostname}` : '[button link]';
+  }
+
+  return '';
+}
+
+function isMeaningfulLink(link, text, href) {
+  if (!href) {
+    return false;
+  }
+
+  if (!/^https?:|^mailto:/i.test(href)) {
+    return false;
+  }
+
+  if (href.startsWith('mailto:')) {
+    return true;
+  }
+
+  if (!text) {
+    const rect = getLinkRect(link);
+    const hasImage = Boolean(link?.querySelector?.('img'));
+    return hasImage && (rect.width >= 32 || rect.height >= 20);
+  }
+
+  if (text.startsWith('[image link]') || text.startsWith('[button link]')) {
+    return true;
+  }
+
+  return /[A-Za-z@]/.test(text) || /^https?:/i.test(text);
 }
 
 function dedupeByHref(links) {
@@ -42,20 +133,33 @@ export function extractVisibleOutlookLinks(root) {
   return dedupeByHref(
     Array.from(root.querySelectorAll('a[href]'))
       .filter(isVisible)
-      .map((link) => ({
-        text: getText(link),
-        href: link.href
-      }))
+      .map((link) => {
+        const text = getLinkText(link);
+        return {
+          element: link,
+          text: text.length > 180 ? `${text.slice(0, 177)}...` : text,
+          href: link.href
+        };
+      })
+      .filter((link) => isMeaningfulLink(link.element, link.text, link.href))
+      .map(({ text, href }) => ({ text, href }))
   );
 }
 
 function getVisibleBodyCandidates(root = document) {
   // Outlook layout differs across tenants and view modes, so keep body detection intentionally broad.
   return Array.from(
-    root.querySelectorAll('[aria-label*="Message body"], div[role="document"], [data-app-section="MailReadCompose"] div[dir="ltr"]')
+    root.querySelectorAll([
+      '[aria-label*="Message body"]',
+      '[aria-label*="Reading pane"] [role="document"]',
+      '[role="document"]',
+      '[data-app-section="MailReadCompose"] div[dir="ltr"]',
+      '[data-app-section="MailReadCompose"] [contenteditable="false"]',
+      '[data-app-section="MailReadCompose"] [data-contents="true"]'
+    ].join(', '))
   )
     .filter(isVisible)
-    .filter((node) => getInnerText(node));
+    .filter((node) => getReadableText(node));
 }
 
 export function getActiveOutlookMessageRoot(root = document) {
@@ -68,6 +172,51 @@ export function getActiveOutlookMessageRoot(root = document) {
   return bodyNode.closest('[role="main"], [data-app-section="MailReadCompose"], section') || bodyNode.parentElement || bodyNode;
 }
 
+function getSubjectCandidates(root, bodyNode) {
+  return Array.from(
+    root.querySelectorAll([
+      '[role="heading"]',
+      '[aria-level="1"]',
+      '[data-app-section="MailReadCompose"] h1',
+      '[data-app-section="MailReadCompose"] h2'
+    ].join(', '))
+  )
+    .filter(isVisible)
+    .filter((node) => !bodyNode || !bodyNode.contains(node))
+    .filter((node) => getText(node));
+}
+
+function getSubjectText(node) {
+  if (!node) {
+    return '';
+  }
+
+  const clone = node.cloneNode(true);
+  clone.querySelectorAll('button, [role="button"], a, input, textarea, select').forEach((element) => element.remove());
+
+  return getText(clone)
+    .replace(/\bSummarize\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function getActiveOutlookSubjectNode(root = document, messageRoot = getActiveOutlookMessageRoot(root)) {
+  if (!messageRoot) {
+    return null;
+  }
+
+  const bodyNode = getVisibleBodyCandidates(messageRoot).at(-1) || getVisibleBodyCandidates(root).at(-1) || null;
+  const candidates = getSubjectCandidates(messageRoot, bodyNode);
+
+  candidates.sort((left, right) => {
+    const leftScore = (left.getAttribute('role') === 'heading' ? 20 : 0) + (left.getAttribute('aria-level') === '1' ? 10 : 0) - getNodeTop(left);
+    const rightScore = (right.getAttribute('role') === 'heading' ? 20 : 0) + (right.getAttribute('aria-level') === '1' ? 10 : 0) - getNodeTop(right);
+    return rightScore - leftScore;
+  });
+
+  return candidates[0] || null;
+}
+
 export function hasActiveOutlookEmail(root = document) {
   const messageRoot = getActiveOutlookMessageRoot(root);
   if (!messageRoot) {
@@ -75,28 +224,166 @@ export function hasActiveOutlookEmail(root = document) {
   }
 
   const bodyNode = getVisibleBodyCandidates(messageRoot).at(-1) || getVisibleBodyCandidates(root).at(-1) || null;
-  const subjectNode = messageRoot.querySelector('[role="heading"]') || root.querySelector('[role="heading"]');
+  const subjectNode = getActiveOutlookSubjectNode(root, messageRoot);
 
-  return Boolean(getText(subjectNode) && getInnerText(bodyNode));
+  return Boolean(getSubjectText(subjectNode) && getReadableText(bodyNode));
+}
+
+function extractAddressesFromMailto(root) {
+  return Array.from(root.querySelectorAll('a[href^="mailto:"]'))
+    .filter(isVisible)
+    .map((link) => link.href.replace(/^mailto:/i, '').split('?')[0].trim())
+    .filter(Boolean);
+}
+
+function parseAddressesFromLabel(value = '') {
+  return value
+    .split(/[;,]/)
+    .map((part) => part.trim())
+    .map((part) => {
+      const match = part.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+      return match?.[0] || part;
+    })
+    .filter(Boolean);
 }
 
 function extractAddresses(root, labelPrefix) {
-  // Outlook often encodes recipient rows through aria labels instead of stable mail-specific elements.
-  return Array.from(root.querySelectorAll(`[aria-label^="${labelPrefix}"], [title][aria-label^="${labelPrefix}"]`))
+  const prefixPattern = new RegExp(`^${labelPrefix}:?\\s*`, 'i');
+
+  const values = Array.from(root.querySelectorAll(`[aria-label^="${labelPrefix}"], [title][aria-label^="${labelPrefix}"], [title^="${labelPrefix}"], [aria-label*="${labelPrefix}:"]`))
     .filter(isVisible)
-    .map((node) => getText(node))
-    .filter(Boolean);
+    .flatMap((node) => {
+      const label = node.getAttribute('aria-label') || node.getAttribute('title') || getText(node);
+      return parseAddressesFromLabel(label.replace(prefixPattern, ''));
+    });
+
+  return [...new Set(values)];
+}
+
+function getHeaderRegion(messageRoot, bodyNode) {
+  if (!messageRoot) {
+    return [];
+  }
+
+  const bodyTop = bodyNode?.getBoundingClientRect?.().top ?? Number.POSITIVE_INFINITY;
+
+  return Array.from(messageRoot.querySelectorAll('[title], [aria-label], a[href^="mailto:"]'))
+    .filter(isVisible)
+    .filter((node) => node.getBoundingClientRect().top < bodyTop);
+}
+
+function extractHeaderEmails(messageRoot, bodyNode) {
+  const values = getHeaderRegion(messageRoot, bodyNode)
+    .flatMap((node) => {
+      if (node.matches('a[href^="mailto:"]')) {
+        return [node.href.replace(/^mailto:/i, '').split('?')[0].trim()];
+      }
+
+      return [
+        node.getAttribute('title') || '',
+        node.getAttribute('aria-label') || '',
+        getText(node)
+      ].map((value) => findEmail(value)).filter(Boolean);
+    });
+
+  return [...new Set(values)];
+}
+
+function extractFromAddress(root, bodyNode) {
+  const candidates = extractAddresses(root, 'From');
+  const labeledEmail = candidates.map((value) => findEmail(value)).find(Boolean);
+  if (labeledEmail) {
+    return labeledEmail;
+  }
+
+  if (candidates.length) {
+    return candidates[0];
+  }
+
+  return extractHeaderEmails(root, bodyNode)[0] || '';
+}
+
+function extractRecipientAddresses(root, labelPrefix, bodyNode) {
+  const labeled = extractAddresses(root, labelPrefix);
+  if (labeled.length) {
+    return labeled;
+  }
+
+  return extractHeaderEmails(root, bodyNode);
 }
 
 function extractAttachments(root) {
   // This is a best-effort DOM read for now; provider APIs may be needed for richer attachment details later.
-  return Array.from(root.querySelectorAll('[draggable="true"] [title], [data-icon-name="Attach"], [aria-label*="Attachment"]'))
+  return Array.from(root.querySelectorAll('[draggable="true"] [title], [data-icon-name="Attach"], [aria-label*="Attachment"], [aria-label*="attached"]'))
     .filter(isVisible)
     .map((node) => ({
       name: getText(node),
       type: ''
     }))
-    .filter((attachment) => attachment.name);
+    .filter((attachment) => attachment.name)
+    .filter((attachment, index, list) => list.findIndex((item) => item.name === attachment.name) === index);
+}
+
+function sanitizeHtmlNode(node) {
+  if (!node) {
+    return '';
+  }
+
+  const clone = node.cloneNode(true);
+
+  clone.querySelectorAll('script, style, noscript, svg, canvas, form, button, input, textarea, select').forEach((element) => element.remove());
+  clone.querySelectorAll('[aria-hidden="true"]').forEach((element) => element.remove());
+
+  const walker = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  let currentNode = walker.nextNode();
+
+  while (currentNode) {
+    textNodes.push(currentNode);
+    currentNode = walker.nextNode();
+  }
+
+  textNodes.forEach((textNode) => {
+    const cleaned = stripInvisibleCharacters(textNode.textContent || '')
+      .replace(/\u00a0/g, ' ')
+      .replace(/[ \t]{2,}/g, ' ');
+
+    if (!cleaned.trim()) {
+      textNode.remove();
+      return;
+    }
+
+    textNode.textContent = cleaned;
+  });
+
+  clone.querySelectorAll('*').forEach((element) => {
+    const tag = element.tagName.toLowerCase();
+    const allowed = new Set(['href', 'src', 'alt']);
+
+    [...element.attributes].forEach((attribute) => {
+      if (!allowed.has(attribute.name.toLowerCase())) {
+        element.removeAttribute(attribute.name);
+      }
+    });
+
+    if (tag === 'a' && !element.getAttribute('href')) {
+      element.removeAttribute('target');
+    }
+  });
+
+  clone.querySelectorAll('*').forEach((element) => {
+    const tag = element.tagName.toLowerCase();
+    const keepStructuralTag = new Set(['a', 'img', 'br', 'hr', 'td', 'tr', 'tbody', 'table']).has(tag);
+
+    if (!keepStructuralTag && !element.children.length && !stripInvisibleCharacters(element.textContent || '').trim()) {
+      element.remove();
+    }
+  });
+
+  return clone.innerHTML
+    .replace(/>\s+</g, '><')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 export function extractOutlookEmailDetails(root = document) {
@@ -106,32 +393,37 @@ export function extractOutlookEmailDetails(root = document) {
   }
 
   const bodyNode = getVisibleBodyCandidates(messageRoot).at(-1) || getVisibleBodyCandidates(root).at(-1) || null;
-  const subjectNode = messageRoot.querySelector('[role="heading"]') || root.querySelector('[role="heading"]');
+  const subjectNode = getActiveOutlookSubjectNode(root, messageRoot);
   // Outlook address labels vary slightly across tenants/layouts, so selectors stay intentionally broad here.
-  const fromCandidates = extractAddresses(messageRoot, 'From');
-  const toCandidates = extractAddresses(messageRoot, 'To');
-  const ccCandidates = extractAddresses(messageRoot, 'Cc');
+  const from = extractFromAddress(messageRoot, bodyNode);
+  const to = [...new Set(extractRecipientAddresses(messageRoot, 'To', bodyNode).filter((value) => value !== from))];
+  const cc = [...new Set(extractRecipientAddresses(messageRoot, 'Cc', bodyNode).filter((value) => value !== from && !to.includes(value)))];
 
-  const subject = getText(subjectNode);
-  const bodyText = getInnerText(bodyNode);
+  const subject = getSubjectText(subjectNode);
+  const bodyText = getReadableText(bodyNode);
 
   if (!subject || !bodyText) {
     // Fail closed so downstream code does not scan Outlook page layout fragments.
     return null;
   }
 
+  const links = extractVisibleOutlookLinks(bodyNode);
+  const attachments = extractAttachments(messageRoot);
+
   return {
     subject,
-    from: fromCandidates[0] || '',
-    to: [...new Set(toCandidates)],
-    cc: [...new Set(ccCandidates)],
+    from,
+    to,
+    cc,
     bodyText,
-    bodyHtml: bodyNode?.innerHTML || '',
-    links: extractVisibleOutlookLinks(bodyNode),
-    attachments: extractAttachments(messageRoot),
+    bodyHtml: sanitizeHtmlNode(bodyNode),
+    links,
+    attachments,
     headers: {},
     metadata: {
-      url: window.location.href
+      url: window.location.href,
+      linkCount: links.length,
+      hasAttachments: attachments.length > 0
     }
   };
 }

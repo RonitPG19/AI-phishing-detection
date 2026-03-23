@@ -16,6 +16,14 @@ function getText(element) {
   return (element?.textContent || '').replace(/\s+/g, ' ').trim();
 }
 
+function stripInvisibleCharacters(value = '') {
+  return String(value).replace(/[\u00ad\u034f\u061c\u200b-\u200f\u2060-\u206f\ufeff]/g, '');
+}
+
+function getNodeTop(element) {
+  return element?.getBoundingClientRect?.().top ?? Number.POSITIVE_INFINITY;
+}
+
 function getReadableText(element) {
   if (!element) {
     return '';
@@ -23,9 +31,86 @@ function getReadableText(element) {
 
   return (element.innerText || '')
     .split('\n')
-    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .map((line) => stripInvisibleCharacters(line).replace(/\s+/g, ' ').trim())
     .filter(Boolean)
     .join('\n');
+}
+
+function getLinkRect(link) {
+  return link?.getBoundingClientRect?.() || { width: 0, height: 0 };
+}
+
+function getHostname(href) {
+  try {
+    return new URL(href).hostname;
+  } catch {
+    return '';
+  }
+}
+
+function getLinkText(link) {
+  if (!link) {
+    return '';
+  }
+
+  const imageAlt = Array.from(link.querySelectorAll('img[alt]'))
+    .map((image) => image.getAttribute('alt') || '')
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .join(' ');
+
+  const rawText = getText(link) || link.getAttribute('aria-label') || link.getAttribute('title') || imageAlt;
+  const normalized = stripInvisibleCharacters(rawText).replace(/\s+/g, ' ').trim();
+
+  if (normalized) {
+    return normalized;
+  }
+
+  const rect = getLinkRect(link);
+  const hostname = getHostname(link.href);
+  const hasImage = Boolean(link.querySelector('img'));
+
+  // Preserve larger image/button links even when the sender omitted visible text.
+  if (hasImage && (rect.width >= 32 || rect.height >= 20)) {
+    return hostname ? `[image link] ${hostname}` : '[image link]';
+  }
+
+  if (rect.width >= 96 || rect.height >= 28) {
+    return hostname ? `[button link] ${hostname}` : '[button link]';
+  }
+
+  return '';
+}
+
+function isMeaningfulLink(link, text, href) {
+  if (!href) {
+    return false;
+  }
+
+  if (!/^https?:|^mailto:/i.test(href)) {
+    return false;
+  }
+
+  if (href.startsWith('mailto:')) {
+    return true;
+  }
+
+  if (!text) {
+    const rect = getLinkRect(link);
+    const hasImage = Boolean(link?.querySelector?.('img'));
+    return hasImage && (rect.width >= 32 || rect.height >= 20);
+  }
+
+  if (text.startsWith('[image link]') || text.startsWith('[button link]')) {
+    return true;
+  }
+
+  // Ignore icon / counter anchors that do not add useful phishing context.
+  if (!/[A-Za-z@]/.test(text) && !/^https?:/i.test(text)) {
+      return false;
+  }
+
+  return true;
 }
 
 function dedupeByHref(links) {
@@ -50,10 +135,16 @@ export function extractVisibleLinks(root) {
   return dedupeByHref(
     Array.from(root.querySelectorAll('a[href]'))
       .filter(isVisible)
-      .map((link) => ({
-        text: getText(link),
-        href: link.href
-      }))
+      .map((link) => {
+        const text = getLinkText(link);
+        return {
+          element: link,
+          text: text.length > 180 ? `${text.slice(0, 177)}...` : text,
+          href: link.href
+        };
+      })
+      .filter((link) => isMeaningfulLink(link.element, link.text, link.href))
+      .map(({ text, href }) => ({ text, href }))
   );
 }
 
@@ -70,13 +161,41 @@ export function getActiveGmailMessageRoot(root = document) {
   return candidates.at(-1) || null;
 }
 
+function getActiveGmailSubjectNode(root = document, messageRoot = getActiveGmailMessageRoot(root)) {
+  if (!messageRoot) {
+    return null;
+  }
+
+  const threadRoot = messageRoot.closest('[role="main"]') || root;
+  const subjectSelectors = [
+    'h2.hP',
+    'h2[data-thread-perm-id]',
+    '.ha h2',
+    '[data-thread-perm-id]'
+  ];
+
+  const candidates = subjectSelectors
+    .flatMap((selector) => Array.from(threadRoot.querySelectorAll(selector)))
+    .filter(isVisible)
+    .filter((node) => !node.closest('.a3s, .ii.gt'))
+    .filter((node) => getText(node));
+
+  candidates.sort((left, right) => {
+    const leftScore = (left.matches('h2.hP') ? 20 : 0) + (left.hasAttribute('data-thread-perm-id') ? 10 : 0) - getNodeTop(left);
+    const rightScore = (right.matches('h2.hP') ? 20 : 0) + (right.hasAttribute('data-thread-perm-id') ? 10 : 0) - getNodeTop(right);
+    return rightScore - leftScore;
+  });
+
+  return candidates[0] || null;
+}
+
 export function hasActiveGmailEmail(root = document) {
   const messageRoot = getActiveGmailMessageRoot(root);
   if (!messageRoot) {
     return false;
   }
 
-  const subjectNode = root.querySelector('h2.hP, h2[data-thread-perm-id]');
+  const subjectNode = getActiveGmailSubjectNode(root, messageRoot);
   const bodyNode = messageRoot.querySelector('.a3s, .ii.gt');
 
   return Boolean(getText(subjectNode) && getReadableText(bodyNode));
@@ -123,6 +242,29 @@ function sanitizeHtmlNode(node) {
   clone.querySelectorAll('script, style, noscript, svg, canvas, form, button, input, textarea, select').forEach((element) => element.remove());
   clone.querySelectorAll('.yj6qo, .gmail_quote, [aria-hidden="true"]').forEach((element) => element.remove());
 
+  const walker = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  let currentNode = walker.nextNode();
+
+  while (currentNode) {
+    textNodes.push(currentNode);
+    currentNode = walker.nextNode();
+  }
+
+  textNodes.forEach((textNode) => {
+    const cleaned = stripInvisibleCharacters(textNode.textContent || '')
+      .replace(/\u00a0/g, ' ')
+      .replace(/[ \t]{2,}/g, ' ');
+
+    // Spacer-heavy newsletter HTML often injects invisible-only text nodes that add noise but no signal.
+    if (!cleaned.trim()) {
+      textNode.remove();
+      return;
+    }
+
+    textNode.textContent = cleaned;
+  });
+
   clone.querySelectorAll('*').forEach((element) => {
     const tag = element.tagName.toLowerCase();
     const allowed = new Set(['href', 'src', 'alt']);
@@ -138,6 +280,15 @@ function sanitizeHtmlNode(node) {
     }
   });
 
+  clone.querySelectorAll('*').forEach((element) => {
+    const tag = element.tagName.toLowerCase();
+    const keepStructuralTag = new Set(['a', 'img', 'br', 'hr', 'td', 'tr', 'tbody', 'table']).has(tag);
+
+    if (!keepStructuralTag && !element.children.length && !stripInvisibleCharacters(element.textContent || '').trim()) {
+      element.remove();
+    }
+  });
+
   return clone.innerHTML
     .replace(/>\s+</g, '><')
     .replace(/\s{2,}/g, ' ')
@@ -150,7 +301,7 @@ export function extractGmailEmailDetails(root = document) {
     return null;
   }
 
-  const subjectNode = root.querySelector('h2.hP, h2[data-thread-perm-id]');
+  const subjectNode = getActiveGmailSubjectNode(root, messageRoot);
   const fromNode = messageRoot.querySelector('.gD[email], .gD');
   const toNodes = Array.from(messageRoot.querySelectorAll('.g2 [email], .hb [email], span[email]')).filter(isVisible);
   const bodyNode = messageRoot.querySelector('.a3s, .ii.gt');

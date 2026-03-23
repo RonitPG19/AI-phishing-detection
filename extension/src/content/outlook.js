@@ -1,4 +1,4 @@
-import { extractOutlookEmailDetails, hasActiveOutlookEmail } from './extractors/outlook-extractor.js';
+import { extractOutlookEmailDetails } from './extractors/outlook-extractor.js';
 import { normalizeEmailPayload } from './extractors/normalizer.js';
 import { createFloatingWidget, removeFloatingWidget, WIDGET_HOST_ID } from './widget.js';
 import { PROVIDERS, RUNTIME_MESSAGES } from '../shared/constants.js';
@@ -16,11 +16,6 @@ function buildNormalizedOutlookPayload() {
 }
 
 async function performOutlookScan() {
-  // Outlook selectors are provider-specific; fail closed if no message is open.
-  if (!hasActiveOutlookEmail()) {
-    throw new Error('Open an Outlook message first, then run Analyze Email.');
-  }
-
   const payload = buildNormalizedOutlookPayload();
   if (!payload) {
     throw new Error('Could not read the currently opened Outlook message.');
