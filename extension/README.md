@@ -13,6 +13,8 @@ The current implementation does four things:
 3. Normalizes the extracted data into a single internal payload shape
 4. Sends that payload through the background layer and returns a mock scan result when no real API is configured
 
+When the API is disabled or no endpoint is configured, scans stay in local preview mode and use the mock result builder. Once an endpoint is enabled, the background layer sends the trimmed backend contract payload instead.
+
 ## Tech Stack
 
 - Manifest V3
@@ -30,6 +32,20 @@ The current implementation does four things:
 ```bash
 cd extension
 npm install
+```
+
+## Common Commands
+
+```bash
+# install dependencies
+cd extension
+npm install
+
+# chromium / thorium build
+npm run build
+
+# firefox build
+npm run build:firefox
 ```
 
 ## Build
@@ -190,6 +206,8 @@ Current scan flow is:
 8. Result is shown in the widget
 9. Last payload/result pair is stored in `chrome.storage.local` for debugging
 
+The popup and debug view also show whether the latest result came from the mock preview flow or from a real API response.
+
 ## Debugging
 
 The last captured payload/result pair is stored under:
@@ -201,6 +219,21 @@ You can inspect it through extension storage or DevTools console:
 ```js
 chrome.storage.local.get('tribunal_last_scan_debug').then(console.log)
 ```
+
+Useful console snippets:
+
+```js
+// latest payload + result
+chrome.storage.local.get('tribunal_last_scan_debug').then(console.log)
+
+// latest payload only
+chrome.storage.local.get('tribunal_last_scan_debug').then(({ tribunal_last_scan_debug }) => console.log(tribunal_last_scan_debug?.payload))
+
+// latest result only
+chrome.storage.local.get('tribunal_last_scan_debug').then(({ tribunal_last_scan_debug }) => console.log(tribunal_last_scan_debug?.result))
+```
+
+The popup `Debug` tab now also surfaces the latest result source so it is obvious whether you are looking at a mock preview or a live API response.
 
 ## Current Internal Payload Shape
 
