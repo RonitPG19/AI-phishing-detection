@@ -248,45 +248,48 @@ The extension currently produces an internal object with fields such as:
 - `attachments`
 - `metadata`
 
-This internal shape can be trimmed later to match the exact backend contract.
+This internal shape stays richer for local debugging. When a real API endpoint is enabled, the background layer trims it down to the backend contract before sending the request.
 
 ## Implemented
 
 - Extension restructured into `src/` and `public/`
 - Manifest V3 build flow via Vite + CRXJS
 - Gmail page detection and Gmail message extraction
-- Initial Outlook page detection and Outlook extraction pass
+- Outlook page detection and Outlook message extraction
 - Floating in-page widget
 - Widget position/minimize persistence
 - Popup settings toggle for floating widget enable/disable
+- Popup active-tab scan flow for Gmail and Outlook
+- Popup/debug result source visibility for mock vs API mode
 - Background request pipeline
 - Mock scan result generation
+- Trimmed backend request payload shaping in `api-client.js`
 - Storage-backed debug payload/result capture
 - Thorium / Chromium-based browser testing
-- Firefox-specific build output generation
+- Firefox-specific build output generation and runtime support
+- Gmail extraction refinement for newsletters / digests
+- Outlook extraction refinement for `outlook.cloud.microsoft`
 
 ## Remaining
 
-- Finalize the exact backend request payload contract
 - Replace mock scanning with the real API endpoint
 - Implement authentication if backend requests must be protected
 - Decide whether provider APIs are needed for reliable header retrieval
-- Refine and validate Outlook extraction on real Outlook mailboxes
-- Validate the Firefox build on real Gmail / Outlook sessions
+- Validate against a wider variety of Gmail / Outlook message layouts
 - Complete final popup/widget UX parity checks
 
 ## Current Limitations
 
-- Gmail extraction currently works on opened messages, but subject detection still needs refinement for some digest / newsletter emails. In some cases a story title from the body can be captured instead of the actual Gmail thread subject.
 - Header extraction is not reliable through DOM scraping alone. `headers` will currently be empty or partial until provider API integration is added.
-- `bodyHtml` is intentionally retained for downstream scanning, but some emails still produce large / noisy HTML payloads.
-- Link extraction currently captures visible message links, including tracking or newsletter links when they are part of the email body.
-- Outlook extraction is only a first pass and has not yet been validated against enough real Outlook message layouts.
+- `bodyHtml` is intentionally retained for downstream scanning, so some emails still produce large / noisy HTML payloads.
+- Link extraction intentionally keeps visible message links, including tracking or newsletter links when they are part of the real email body.
+- Outlook recipient fields may still resolve to display names instead of email addresses, depending on what the Outlook DOM exposes.
 - Popup-level debug access still needs one final UX pass to make inspection more obvious.
-- Firefox compatibility now has a dedicated build path, but runtime validation is still pending.
+- Real API responses are only available after a backend endpoint is configured; otherwise scans stay in mock preview mode.
 
 ## Current Testing Status
 
 - Tested on Thorium (Chromium-based)
-- Firefox compatibility build prepared, runtime validation pending
-- Outlook validation is still pending
+- Tested on Firefox via `dist-firefox`
+- Gmail extraction validated on transactional and digest-style emails
+- Outlook extraction validated on real Outlook mailbox pages
