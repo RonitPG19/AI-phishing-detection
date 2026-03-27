@@ -60,6 +60,10 @@ yarn-error.log*
 *.json
 *.db
 
+# Keep required extension config files
+!extension/package.json
+!extension/manifest.json
+
 # Allow ONLY these CSV files
 !backend/scanner-app/src/main/resources/top-1m-Tranco.csv
 !backend/scanner-app/src/main/resources/top-1m-umbrella.csv
