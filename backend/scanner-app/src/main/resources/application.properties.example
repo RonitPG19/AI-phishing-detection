@@ -1,2 +1,6 @@
 spring.application.name=scanner-app
 spring.security.enabled=false
+firebase.enabled=false
+firebase.service-account.path=classpath:tribunal-ai-firebase-adminsdk-fbsvc-0e962519f3.json
+firebase.project-id=
+firebase.firestore.collection=phishingReports

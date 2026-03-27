@@ -70,8 +70,10 @@ public class PhishingScannerService {
 
     private final Set<String> trustedDomains;
     private final Set<String> openPhishFeed;
+    private final RedirectChainResolver redirectChainResolver;
 
-    public PhishingScannerService() {
+    public PhishingScannerService(RedirectChainResolver redirectChainResolver) {
+        this.redirectChainResolver = redirectChainResolver;
         this.trustedDomains = loadTrustedDomains();
         this.openPhishFeed = loadOpenPhishFeed();
     }
@@ -89,23 +91,61 @@ public class PhishingScannerService {
         Set<String> urls = extractUrlsFromContent(emailContent);
         List<RiskFinding> findings = new ArrayList<>();
 
+        // ── Redirect chain resolution ──
+        // Resolve shortened/redirected URLs and add final destinations to the URL set
+        Set<String> resolvedUrls = new LinkedHashSet<>(urls);
+        for (String url : urls) {
+            RedirectChainResolver.RedirectChain chain = redirectChainResolver.resolve(url);
+            if (chain.wasRedirected()) {
+                resolvedUrls.add(chain.finalUrl());
+
+                String startDomain = extractDomainFromUrl(url);
+                String finalDomain = extractDomainFromUrl(chain.finalUrl());
+
+                // Flag long redirect chains (3+ hops)
+                if (chain.hopCount() >= 3) {
+                    findings.add(new RiskFinding(url,
+                        "URL has a long redirect chain (" + chain.hopCount() + " hops) ending at " + chain.finalUrl(),
+                        Severity.MEDIUM));
+                }
+
+                // Flag domain change through redirect
+                if (!startDomain.isEmpty() && !finalDomain.isEmpty()
+                    && !extractRootDomain(startDomain).equals(extractRootDomain(finalDomain))) {
+                    findings.add(new RiskFinding(url,
+                        "URL redirects to a different domain: " + startDomain + " → " + finalDomain,
+                        Severity.LOW));
+                }
+
+                // Flag use of shortener services
+                if (RedirectChainResolver.isKnownShortener(startDomain)) {
+                    findings.add(new RiskFinding(url,
+                        "URL uses shortener (" + startDomain + "), real destination: " + chain.finalUrl(),
+                        Severity.LOW));
+                }
+            }
+        }
+
+        // Use the expanded URL set (original + resolved) for all downstream checks
+        Set<String> allUrls = resolvedUrls;
+
         HeaderInspectionResult headerInspectionResult = inspectAuthenticationHeaders(request, findings);
         headerInspectionResult.displayNameMismatch = detectDisplayNameMismatch(request, findings);
         headerInspectionResult.replyToMismatch = detectReplyToMismatch(request, findings);
 
-        checkOpenPhish(urls, openPhishFeed, findings);
-        checkGoogleSafeBrowsing(urls, safeBrowsingApiKey, findings);
+        checkOpenPhish(allUrls, openPhishFeed, findings);
+        checkGoogleSafeBrowsing(allUrls, safeBrowsingApiKey, findings);
 
-        Map<String, String> urlDomainMap = buildUrlDomainMap(urls);
+        Map<String, String> urlDomainMap = buildUrlDomainMap(allUrls);
         inspectHomographDomains(urlDomainMap, findings);
 
         Map<String, Integer> domainAgeByRootDomain = inspectDomainAges(urlDomainMap.values(), findings);
         inspectTyposquatting(urlDomainMap.values(), trustedDomains, findings);
-        inspectSslCertificates(urls, domainAgeByRootDomain, findings);
+        inspectSslCertificates(allUrls, domainAgeByRootDomain, findings);
         
 
         int overallRiskScore = calculateRiskScore(findings, headerInspectionResult);
-        return new EmailScanReport(subject, sender, urls.size(), findings, headerInspectionResult, overallRiskScore);
+        return new EmailScanReport(subject, sender, allUrls.size(), findings, headerInspectionResult, overallRiskScore, null);
     }
 
     private static Set<String> extractUrlsFromContent(EmailContent emailContent) {
@@ -805,7 +845,8 @@ public class PhishingScannerService {
         int urlCount,
         List<RiskFinding> findings,
         HeaderInspectionResult headerInspectionResult,
-        int overallRiskScore
+        int overallRiskScore,
+        String reportId
     ) {
     }
 }
