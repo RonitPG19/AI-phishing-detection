@@ -29,7 +29,6 @@
 	<properties>
 		<java.version>21</java.version>
 		<spring-ai.version>2.0.0-M3</spring-ai.version>
-		<grpc.version>1.75.0</grpc.version>
 		<protobuf.version>4.28.2</protobuf.version>
 	</properties>
 	<dependencies>
@@ -53,6 +52,10 @@
 			<groupId>com.google.firebase</groupId>
 			<artifactId>firebase-admin</artifactId>
 			<version>9.3.0</version>
+		</dependency>
+		<dependency>
+			<groupId>io.netty</groupId>
+			<artifactId>netty-tcnative-boringssl-static</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
@@ -84,11 +87,6 @@
 				<version>${spring-ai.version}</version>
 				<type>pom</type>
 				<scope>import</scope>
-			</dependency>
-			<dependency>
-				<groupId>io.grpc</groupId>
-				<artifactId>grpc-netty-shaded</artifactId>
-				<version>${grpc.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>com.google.protobuf</groupId>

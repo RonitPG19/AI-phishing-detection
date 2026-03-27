@@ -27,7 +27,8 @@ import java.util.Map;
 public class GeminiEmailAnalyzer {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(GeminiEmailAnalyzer.class);
-    private static final int TIMEOUT_MS = 15_000;
+    private static final int MAX_RETRIES = 3;
+    private static final int RETRY_DELAY_MS = 1_000;
     private static final int MAX_BODY_LENGTH = 8_000; // limit text sent to Gemini
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -68,8 +69,12 @@ public class GeminiEmailAnalyzer {
     @Value("${gemini.api.key:}")
     private String apiKey;
 
+    @Value("${gemini.timeout.ms:30000}")
+    private int timeoutMs;
+
     /**
      * Analyzes the email content using Gemini and returns structured findings.
+     * Implements retry logic with exponential backoff for transient failures.
      *
      * @param subject  the email subject
      * @param sender   the sender address
@@ -90,12 +95,36 @@ public class GeminiEmailAnalyzer {
         try {
             String emailContent = buildEmailContent(subject, sender, bodyText);
             String requestBody = buildGeminiRequest(emailContent);
-            String response = callGeminiApi(requestBody);
-            return parseGeminiResponse(response);
+            return analyzeWithRetry(requestBody);
         } catch (Exception exception) {
-            LOGGER.warn("Gemini email analysis failed: {}", exception.getMessage());
+            LOGGER.warn("Gemini email analysis failed after {} retries: {}", MAX_RETRIES, exception.getMessage());
+            LOGGER.debug("Stack trace:", exception);
             return null;
         }
+    }
+
+    private GeminiAnalysisResult analyzeWithRetry(String requestBody) throws Exception {
+        Exception lastException = null;
+        
+        for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                String response = callGeminiApi(requestBody);
+                return parseGeminiResponse(response);
+            } catch (Exception exception) {
+                lastException = exception;
+                if (attempt < MAX_RETRIES) {
+                    long delayMs = RETRY_DELAY_MS * (long) Math.pow(2, attempt - 1);
+                    LOGGER.debug("Gemini API attempt {} failed: {}. Retrying in {}ms...", 
+                        attempt, exception.getMessage(), delayMs);
+                    Thread.sleep(delayMs);
+                } else {
+                    LOGGER.warn("Gemini API attempt {} failed: {} (final attempt)", 
+                        attempt, exception.getMessage());
+                }
+            }
+        }
+        
+        throw lastException;
     }
 
     private String buildEmailContent(String subject, String sender, String bodyText) {
@@ -133,8 +162,8 @@ public class GeminiEmailAnalyzer {
         URL url = uri.toURL();
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setRequestMethod("POST");
-        connection.setConnectTimeout(TIMEOUT_MS);
-        connection.setReadTimeout(TIMEOUT_MS);
+        connection.setConnectTimeout(timeoutMs);
+        connection.setReadTimeout(timeoutMs);
         connection.setRequestProperty("Content-Type", "application/json");
         connection.setDoOutput(true);
 

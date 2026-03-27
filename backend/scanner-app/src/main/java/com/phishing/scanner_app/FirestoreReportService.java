@@ -21,16 +21,21 @@ import java.util.Map;
 public class FirestoreReportService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(FirestoreReportService.class);
+    private static final int MAX_RETRIES = 3;
+    private static final int RETRY_DELAY_MS = 500;
 
     private final Firestore firestore;
     private final String collectionName;
+    private final int firestoreTimeoutSeconds;
 
     public FirestoreReportService(
         ObjectProvider<Firestore> firestoreProvider,
-        @Value("${firebase.firestore.collection:phishingReports}") String collectionName
+        @Value("${firebase.firestore.collection:phishingReports}") String collectionName,
+        @Value("${firebase.firestore.timeout.seconds:30}") int firestoreTimeoutSeconds
     ) {
         this.firestore = firestoreProvider.getIfAvailable();
         this.collectionName = collectionName;
+        this.firestoreTimeoutSeconds = firestoreTimeoutSeconds;
     }
 
     public String savePhishingReport(EmailRequest request, PhishingScannerService.EmailScanReport report) {
@@ -40,51 +45,78 @@ public class FirestoreReportService {
         }
 
         try {
-            Map<String, Object> document = new LinkedHashMap<>();
-            document.put("savedAt", Instant.now().toString());
-            document.put("from", request.getFrom());
-            document.put("subject", report.subject());
-            document.put("sender", report.sender());
-            document.put("urlCount", report.urlCount());
-            document.put("overallRiskScore", report.overallRiskScore());
-            document.put("headerInspectionResult", Map.of(
-                "spfFail", report.headerInspectionResult().spfFail,
-                "dkimFail", report.headerInspectionResult().dkimFail,
-                "dmarcFail", report.headerInspectionResult().dmarcFail,
-                "displayNameMismatch", report.headerInspectionResult().displayNameMismatch,
-                "replyToMismatch", report.headerInspectionResult().replyToMismatch
-            ));
-            document.put("findings", mapFindings(report.findings()));
-
-            // Persist AI analysis if available
-            if (report.aiAnalysis() != null) {
-                Map<String, Object> aiData = new LinkedHashMap<>();
-                aiData.put("phishingLikelihood", report.aiAnalysis().phishingLikelihood);
-                aiData.put("summary", report.aiAnalysis().summary);
-                if (report.aiAnalysis().indicators != null) {
-                    List<Map<String, String>> indicators = report.aiAnalysis().indicators.stream()
-                        .map(ind -> Map.of(
-                            "indicator", ind.indicator != null ? ind.indicator : "",
-                            "description", ind.description != null ? ind.description : "",
-                            "severity", ind.severity != null ? ind.severity : "LOW"
-                        ))
-                        .toList();
-                    aiData.put("indicators", indicators);
-                }
-                document.put("aiAnalysis", aiData);
-            }
-
-            DocumentReference ref = firestore.collection(collectionName).add(document).get();
-            return ref.getId();
+            return saveWithRetry(request, report);
         } catch (Exception exception) {
-            LOGGER.warn("Failed to save phishing report in Firestore: {}", exception.getMessage());
+            LOGGER.warn("Failed to save phishing report in Firestore after {} retries: {}", 
+                MAX_RETRIES, exception.getMessage());
+            LOGGER.debug("Firestore error details:", exception);
             return null;
         }
     }
 
-    /**
-     * Retrieves a single report by its Firestore document ID.
-     */
+    private String saveWithRetry(EmailRequest request, PhishingScannerService.EmailScanReport report) throws Exception {
+        Exception lastException = null;
+        
+        for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                Map<String, Object> document = buildDocument(request, report);
+                DocumentReference ref = firestore.collection(collectionName).add(document).get();
+                LOGGER.debug("Successfully saved phishing report to Firestore: {}", ref.getId());
+                return ref.getId();
+            } catch (Exception exception) {
+                lastException = exception;
+                if (attempt < MAX_RETRIES) {
+                    long delayMs = RETRY_DELAY_MS * (long) Math.pow(2, attempt - 1);
+                    LOGGER.debug("Firestore write attempt {} failed: {}. Retrying in {}ms...", 
+                        attempt, exception.getMessage(), delayMs);
+                    Thread.sleep(delayMs);
+                } else {
+                    LOGGER.warn("Firestore write attempt {} failed: {} (final attempt)", 
+                        attempt, exception.getMessage());
+                }
+            }
+        }
+        
+        throw lastException;
+    }
+
+    private Map<String, Object> buildDocument(EmailRequest request, PhishingScannerService.EmailScanReport report) {
+        Map<String, Object> document = new LinkedHashMap<>();
+        document.put("savedAt", Instant.now().toString());
+        document.put("from", request.getFrom());
+        document.put("subject", report.subject());
+        document.put("sender", report.sender());
+        document.put("urlCount", report.urlCount());
+        document.put("overallRiskScore", report.overallRiskScore());
+        document.put("headerInspectionResult", Map.of(
+            "spfFail", report.headerInspectionResult().spfFail,
+            "dkimFail", report.headerInspectionResult().dkimFail,
+            "dmarcFail", report.headerInspectionResult().dmarcFail,
+            "displayNameMismatch", report.headerInspectionResult().displayNameMismatch,
+            "replyToMismatch", report.headerInspectionResult().replyToMismatch
+        ));
+        document.put("findings", mapFindings(report.findings()));
+
+        // Persist AI analysis if available
+        if (report.aiAnalysis() != null) {
+            Map<String, Object> aiData = new LinkedHashMap<>();
+            aiData.put("phishingLikelihood", report.aiAnalysis().phishingLikelihood);
+            aiData.put("summary", report.aiAnalysis().summary);
+            if (report.aiAnalysis().indicators != null) {
+                List<Map<String, String>> indicators = report.aiAnalysis().indicators.stream()
+                    .map(ind -> Map.of(
+                        "indicator", ind.indicator != null ? ind.indicator : "",
+                        "description", ind.description != null ? ind.description : "",
+                        "severity", ind.severity != null ? ind.severity : "LOW"
+                    ))
+                    .toList();
+                aiData.put("indicators", indicators);
+            }
+            document.put("aiAnalysis", aiData);
+        }
+        
+        return document;
+    }
     public Map<String, Object> getReport(String id) {
         if (firestore == null) {
             LOGGER.debug("Skipping Firestore read because Firebase is not enabled");
@@ -101,6 +133,7 @@ public class FirestoreReportService {
             return data;
         } catch (Exception exception) {
             LOGGER.warn("Failed to read phishing report from Firestore: {}", exception.getMessage());
+            LOGGER.debug("Firestore read error details:", exception);
             return null;
         }
     }
@@ -131,6 +164,7 @@ public class FirestoreReportService {
             return results;
         } catch (Exception exception) {
             LOGGER.warn("Failed to list phishing reports from Firestore: {}", exception.getMessage());
+            LOGGER.debug("Firestore list error details:", exception);
             return List.of();
         }
     }

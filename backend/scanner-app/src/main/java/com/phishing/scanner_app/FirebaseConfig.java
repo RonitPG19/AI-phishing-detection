@@ -5,6 +5,7 @@ import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
 import com.google.firebase.cloud.FirestoreClient;
 import com.google.cloud.firestore.Firestore;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -24,6 +25,9 @@ public class FirebaseConfig {
 
     @Value("${firebase.project-id:}")
     private String projectId;
+
+    @Value("${firebase.firestore.timeout.seconds:30}")
+    private long firestoreTimeoutSeconds;
 
     @Bean
     public FirebaseApp firebaseApp() throws IOException {
@@ -45,6 +49,8 @@ public class FirebaseConfig {
 
     @Bean
     public Firestore firestore(FirebaseApp firebaseApp) {
+        // Firestore client will inherit connection pooling and timeout settings from gRPC
+        // The firestoreTimeoutSeconds property is used in FirestoreReportService for operation retries
         return FirestoreClient.getFirestore(firebaseApp);
     }
 
