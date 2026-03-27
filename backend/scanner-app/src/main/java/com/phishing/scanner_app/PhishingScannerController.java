@@ -36,7 +36,8 @@ public class PhishingScannerController {
             report.findings(),
             report.headerInspectionResult(),
             report.overallRiskScore(),
-            reportId
+            reportId,
+            report.aiAnalysis()
         );
 
         return ResponseEntity.ok(responseReport);

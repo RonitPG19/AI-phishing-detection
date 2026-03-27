@@ -71,9 +71,11 @@ public class PhishingScannerService {
     private final Set<String> trustedDomains;
     private final Set<String> openPhishFeed;
     private final RedirectChainResolver redirectChainResolver;
+    private final GeminiEmailAnalyzer geminiEmailAnalyzer;
 
-    public PhishingScannerService(RedirectChainResolver redirectChainResolver) {
+    public PhishingScannerService(RedirectChainResolver redirectChainResolver, GeminiEmailAnalyzer geminiEmailAnalyzer) {
         this.redirectChainResolver = redirectChainResolver;
+        this.geminiEmailAnalyzer = geminiEmailAnalyzer;
         this.trustedDomains = loadTrustedDomains();
         this.openPhishFeed = loadOpenPhishFeed();
     }
@@ -142,10 +144,36 @@ public class PhishingScannerService {
         Map<String, Integer> domainAgeByRootDomain = inspectDomainAges(urlDomainMap.values(), findings);
         inspectTyposquatting(urlDomainMap.values(), trustedDomains, findings);
         inspectSslCertificates(allUrls, domainAgeByRootDomain, findings);
-        
+
+        // ── AI-powered email body analysis ──
+        String bodyForAnalysis = emailContent.hasHtml()
+            ? org.jsoup.Jsoup.parse(emailContent.getHtml()).text()
+            : emailContent.getText();
+        GeminiEmailAnalyzer.GeminiAnalysisResult aiAnalysis =
+            geminiEmailAnalyzer.analyze(subject, sender, bodyForAnalysis);
+
+        if (aiAnalysis != null && aiAnalysis.indicators != null) {
+            for (GeminiEmailAnalyzer.PhishingIndicator indicator : aiAnalysis.indicators) {
+                Severity severity = parseAiSeverity(indicator.severity);
+                findings.add(new RiskFinding(
+                    "[AI] " + indicator.indicator,
+                    indicator.description,
+                    severity
+                ));
+            }
+        }
 
         int overallRiskScore = calculateRiskScore(findings, headerInspectionResult);
-        return new EmailScanReport(subject, sender, allUrls.size(), findings, headerInspectionResult, overallRiskScore, null);
+        return new EmailScanReport(subject, sender, allUrls.size(), findings, headerInspectionResult, overallRiskScore, null, aiAnalysis);
+    }
+
+    private static Severity parseAiSeverity(String severity) {
+        if (severity == null) return Severity.LOW;
+        return switch (severity.toUpperCase()) {
+            case "HIGH" -> Severity.HIGH;
+            case "MEDIUM" -> Severity.MEDIUM;
+            default -> Severity.LOW;
+        };
     }
 
     private static Set<String> extractUrlsFromContent(EmailContent emailContent) {
@@ -846,7 +874,8 @@ public class PhishingScannerService {
         List<RiskFinding> findings,
         HeaderInspectionResult headerInspectionResult,
         int overallRiskScore,
-        String reportId
+        String reportId,
+        GeminiEmailAnalyzer.GeminiAnalysisResult aiAnalysis
     ) {
     }
 }

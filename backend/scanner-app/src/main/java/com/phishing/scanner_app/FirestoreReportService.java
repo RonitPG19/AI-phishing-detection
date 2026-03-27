@@ -56,6 +56,24 @@ public class FirestoreReportService {
             ));
             document.put("findings", mapFindings(report.findings()));
 
+            // Persist AI analysis if available
+            if (report.aiAnalysis() != null) {
+                Map<String, Object> aiData = new LinkedHashMap<>();
+                aiData.put("phishingLikelihood", report.aiAnalysis().phishingLikelihood);
+                aiData.put("summary", report.aiAnalysis().summary);
+                if (report.aiAnalysis().indicators != null) {
+                    List<Map<String, String>> indicators = report.aiAnalysis().indicators.stream()
+                        .map(ind -> Map.of(
+                            "indicator", ind.indicator != null ? ind.indicator : "",
+                            "description", ind.description != null ? ind.description : "",
+                            "severity", ind.severity != null ? ind.severity : "LOW"
+                        ))
+                        .toList();
+                    aiData.put("indicators", indicators);
+                }
+                document.put("aiAnalysis", aiData);
+            }
+
             DocumentReference ref = firestore.collection(collectionName).add(document).get();
             return ref.getId();
         } catch (Exception exception) {
