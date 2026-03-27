@@ -4,4 +4,6 @@ firebase.enabled=false
 firebase.service-account.path=classpath:tribunal-ai-firebase-adminsdk-fbsvc-0e962519f3.json
 firebase.project-id=
 firebase.firestore.collection=phishingReports
+firebase.firestore.timeout.seconds=30
 gemini.api.key=
+gemini.timeout.ms=30000
