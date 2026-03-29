@@ -9,7 +9,7 @@ import jwt
 blacklist = set()
 
 # Google Login
-def google_login():
+def firebase_login():
     token = request.headers.get("Authorization")
 
     if not token:
@@ -17,6 +17,9 @@ def google_login():
     
     token = token.split(" ")[1]
     decoded = auth.verify_id_token(token)
+
+    if not decoded.get("email_verified"):
+        return {"error": "Email not verified"}, 403
 
     uid = decoded["uid"]
     email = decoded.get("email")
