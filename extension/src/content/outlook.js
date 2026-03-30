@@ -2,7 +2,7 @@ import { extractOutlookEmailDetails } from './extractors/outlook-extractor.js';
 import { normalizeEmailPayload } from './extractors/normalizer.js';
 import { createFloatingWidget, removeFloatingWidget, WIDGET_HOST_ID } from './widget.js';
 import { PROVIDERS, RUNTIME_MESSAGES } from '../shared/constants.js';
-import { getWidgetPreferences } from '../shared/storage.js';
+import { getAuthSession, getWidgetPreferences } from '../shared/storage.js';
 
 function buildNormalizedOutlookPayload() {
   // Outlook-specific selectors live in the extractor; keep this file focused on orchestration.
@@ -16,6 +16,11 @@ function buildNormalizedOutlookPayload() {
 }
 
 async function performOutlookScan() {
+  const session = await getAuthSession();
+  if (!session?.accessToken) {
+    throw new Error('Log in to analyze emails with Tribunal.');
+  }
+
   const payload = buildNormalizedOutlookPayload();
   if (!payload) {
     throw new Error('Could not read the currently opened Outlook message.');

@@ -1,15 +1,12 @@
-﻿import { getWidgetState, saveWidgetState } from '../shared/storage.js';
+import { getWidgetState, saveWidgetState } from '../shared/storage.js';
 
 export const WIDGET_HOST_ID = 'tribunal-floating-widget-host';
+export const WIDGET_BUBBLE_HOST_ID = 'tribunal-floating-widget-bubble-host';
 
 const ICONS = {
   chevron: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`,
   check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>`
 };
-
-function getProviderLabel(provider) {
-  return provider === 'gmail' ? 'Gmail' : 'Outlook';
-}
 
 function getLogoUrl() {
   return chrome.runtime.getURL('logo.png');
@@ -17,21 +14,6 @@ function getLogoUrl() {
 
 function getFallbackIconUrl() {
   return chrome.runtime.getURL('icons/icon48.png');
-}
-
-function getClampedPosition(position, width = 320, height = 520) {
-  if (!position || position.left == null || position.top == null) {
-    return null;
-  }
-
-  const padding = 8;
-  const maxLeft = Math.max(padding, window.innerWidth - width - padding);
-  const maxTop = Math.max(padding, window.innerHeight - height - padding);
-
-  return {
-    left: Math.min(Math.max(position.left, padding), maxLeft),
-    top: Math.min(Math.max(position.top, padding), maxTop)
-  };
 }
 
 function escapeHtml(value = '') {
@@ -45,6 +27,10 @@ function escapeHtml(value = '') {
 
 function countIssues(sections = {}) {
   return Object.values(sections).reduce((total, section) => total + (section?.issues?.length || 0), 0);
+}
+
+function getPanelPosition() {
+  return { right: 24, bottom: 24 };
 }
 
 function renderIssueCard(issue, sectionKey, index) {
@@ -144,35 +130,8 @@ function renderMessageCard(title, message) {
   `;
 }
 
-export function removeFloatingWidget() {
-  document.getElementById(WIDGET_HOST_ID)?.remove();
-}
-
-export async function createFloatingWidget({ provider, onScan }) {
-  // Content scripts can re-run on SPA navigation; keep a single widget instance mounted.
-  if (document.getElementById(WIDGET_HOST_ID)) {
-    return;
-  }
-
-  const storedState = await getWidgetState();
-  const host = document.createElement('div');
-  host.id = WIDGET_HOST_ID;
-  host.style.position = 'fixed';
-  host.style.zIndex = '2147483647';
-  host.style.right = '24px';
-  host.style.bottom = '24px';
-
-  const clampedPosition = getClampedPosition(storedState.position);
-
-  if (clampedPosition) {
-    host.style.left = `${clampedPosition.left}px`;
-    host.style.top = `${clampedPosition.top}px`;
-    host.style.right = 'auto';
-    host.style.bottom = 'auto';
-  }
-
-  const shadow = host.attachShadow({ mode: 'open' });
-  shadow.innerHTML = `
+function createPanelMarkup(provider) {
+  return `
     <style>
       :host {
         all: initial;
@@ -189,18 +148,19 @@ export async function createFloatingWidget({ provider, onScan }) {
       }
 
       .panel {
+        position: relative;
         width: 320px;
+        max-width: min(320px, calc(100vw - 24px));
         background: #0c0c0c;
         color: #ececec;
         border: 1px solid #222222;
         border-radius: 20px;
         overflow: hidden;
         box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+        pointer-events: auto;
       }
 
-      .panel.hidden,
-      .content.hidden,
-      .status-note.hidden {
+      .panel.hidden {
         display: none;
       }
 
@@ -213,7 +173,6 @@ export async function createFloatingWidget({ provider, onScan }) {
         padding: 16px 20px;
         border-bottom: 1px solid #222222;
         background: #0c0c0c;
-        cursor: move;
       }
 
       .header-logo {
@@ -255,18 +214,17 @@ export async function createFloatingWidget({ provider, onScan }) {
         cursor: pointer;
       }
 
-      .minimize:hover {
-        background: #1c1c1c;
-        color: #ececec;
-        border-color: #505050;
-      }
-
       .body {
         padding: 20px;
       }
 
       .status-note {
         margin-bottom: 12px;
+      }
+
+      .status-note.hidden,
+      .content.hidden {
+        display: none;
       }
 
       .message-card {
@@ -280,7 +238,6 @@ export async function createFloatingWidget({ provider, onScan }) {
         font-size: 13px;
         font-weight: 600;
         color: #ececec;
-        letter-spacing: -0.01em;
       }
 
       .message-card-copy {
@@ -302,7 +259,6 @@ export async function createFloatingWidget({ provider, onScan }) {
       .results-threat-label {
         font-size: 18px;
         font-weight: 700;
-        letter-spacing: -0.02em;
         margin-bottom: 4px;
       }
 
@@ -340,10 +296,6 @@ export async function createFloatingWidget({ provider, onScan }) {
         cursor: pointer;
       }
 
-      .section-header:hover {
-        background: rgba(255,255,255,0.04);
-      }
-
       .section-arrow {
         width: 14px;
         height: 14px;
@@ -373,8 +325,6 @@ export async function createFloatingWidget({ provider, onScan }) {
         background: #1c1c1c;
         padding: 1px 8px;
         border-radius: 999px;
-        min-width: 22px;
-        text-align: center;
       }
 
       .section-count.has-issues {
@@ -420,10 +370,6 @@ export async function createFloatingWidget({ provider, onScan }) {
         color: #ececec;
         text-align: left;
         cursor: pointer;
-      }
-
-      .issue-card-header:hover {
-        background: rgba(255,255,255,0.04);
       }
 
       .issue-card-title {
@@ -523,7 +469,6 @@ export async function createFloatingWidget({ provider, onScan }) {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        gap: 8px;
         width: 100%;
         height: 42px;
         background: #ececec;
@@ -532,21 +477,35 @@ export async function createFloatingWidget({ provider, onScan }) {
         border-radius: 10px;
         font-size: 13px;
         font-weight: 600;
-        letter-spacing: -0.01em;
         cursor: pointer;
-        transition: all 120ms cubic-bezier(0.4, 0, 0.2, 1);
+      }
+    </style>
+    <section class="panel">
+      <div class="header">
+        <img class="header-logo" src="${getLogoUrl()}" alt="Tribunal" />
+        <div class="header-title">tribunal</div>
+        <button class="minimize" type="button" aria-label="Minimize widget" data-no-drag="true">-</button>
+      </div>
+      <div class="body">
+        <div class="status-note hidden" aria-live="polite"></div>
+        <div class="content hidden"></div>
+        <button class="btn-primary" type="button">Analyze Email</button>
+      </div>
+    </section>
+  `;
+}
+
+function createBubbleMarkup() {
+  return `
+    <style>
+      :host {
+        all: initial;
       }
 
-      .btn-primary:hover:not(:disabled) {
-        background: transparent;
-        color: #ececec;
-      }
-
-      .btn-primary:disabled {
-        background: #1c1c1c;
-        border-color: #222222;
-        color: #505050;
-        cursor: default;
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
       }
 
       .bubble {
@@ -583,36 +542,53 @@ export async function createFloatingWidget({ provider, onScan }) {
         object-fit: contain;
       }
     </style>
-    <section class="panel">
-      <div class="header" data-drag-handle="panel">
-        <img class="header-logo" src="${getLogoUrl()}" alt="Tribunal" />
-        <div class="header-title">tribunal</div>
-        <div class="header-copy">${getProviderLabel(provider)} protection active</div>
-        <button class="minimize" type="button" aria-label="Minimize widget" data-no-drag="true">-</button>
-      </div>
-      <div class="body">
-        <div class="status-note hidden" aria-live="polite"></div>
-        <div class="content hidden"></div>
-        <button class="btn-primary" type="button">Analyze Email</button>
-      </div>
-    </section>
     <button class="bubble hidden" type="button" aria-label="Open Tribunal widget">
       <span class="bubble-inner">
         <img class="bubble-logo" src="${getLogoUrl()}" alt="Tribunal" />
       </span>
     </button>
   `;
+}
 
-  (document.body || document.documentElement).appendChild(host);
+export async function createFloatingWidget({ provider, onScan }) {
+  if (document.getElementById(WIDGET_HOST_ID) || document.getElementById(WIDGET_BUBBLE_HOST_ID)) {
+    return;
+  }
 
-  const panel = shadow.querySelector('.panel');
-  const bubble = shadow.querySelector('.bubble');
-  const minimizeButton = shadow.querySelector('.minimize');
-  const scanButton = shadow.querySelector('.btn-primary');
-  const content = shadow.querySelector('.content');
-  const statusNote = shadow.querySelector('.status-note');
-  const dragHandle = shadow.querySelector('[data-drag-handle="panel"]');
-  const logos = shadow.querySelectorAll('img');
+  const storedState = await getWidgetState();
+
+  const panelHost = document.createElement('div');
+  panelHost.id = WIDGET_HOST_ID;
+  panelHost.style.position = 'fixed';
+  panelHost.style.right = `${getPanelPosition().right}px`;
+  panelHost.style.bottom = `${getPanelPosition().bottom}px`;
+  panelHost.style.maxWidth = 'calc(100vw - 24px)';
+  panelHost.style.zIndex = '2147483647';
+  panelHost.style.pointerEvents = 'auto';
+
+  const panelShadow = panelHost.attachShadow({ mode: 'open' });
+  panelShadow.innerHTML = createPanelMarkup(provider);
+
+  const bubbleHost = document.createElement('div');
+  bubbleHost.id = WIDGET_BUBBLE_HOST_ID;
+  bubbleHost.style.position = 'fixed';
+  bubbleHost.style.right = '24px';
+  bubbleHost.style.bottom = '24px';
+  bubbleHost.style.zIndex = '2147483647';
+
+  const bubbleShadow = bubbleHost.attachShadow({ mode: 'open' });
+  bubbleShadow.innerHTML = createBubbleMarkup();
+
+  (document.body || document.documentElement).appendChild(panelHost);
+  (document.body || document.documentElement).appendChild(bubbleHost);
+
+  const panel = panelShadow.querySelector('.panel');
+  const minimizeButton = panelShadow.querySelector('.minimize');
+  const scanButton = panelShadow.querySelector('.btn-primary');
+  const content = panelShadow.querySelector('.content');
+  const statusNote = panelShadow.querySelector('.status-note');
+  const bubble = bubbleShadow.querySelector('.bubble');
+  const logos = [...panelShadow.querySelectorAll('img'), ...bubbleShadow.querySelectorAll('img')];
 
   logos.forEach((logo) => {
     logo.addEventListener('error', () => {
@@ -620,23 +596,7 @@ export async function createFloatingWidget({ provider, onScan }) {
     }, { once: true });
   });
 
-  window.addEventListener('resize', async () => {
-    const rect = host.getBoundingClientRect();
-    const nextPosition = getClampedPosition({ left: rect.left, top: rect.top }, rect.width || 320, rect.height || 520);
-
-    if (!nextPosition) {
-      return;
-    }
-
-    host.style.left = `${nextPosition.left}px`;
-    host.style.top = `${nextPosition.top}px`;
-    host.style.right = 'auto';
-    host.style.bottom = 'auto';
-    await saveWidgetState({ position: nextPosition });
-  });
-
   function applyMinimizedState(minimized) {
-    // The minimized bubble remains as the single page affordance when the panel is collapsed.
     panel.classList.toggle('hidden', minimized);
     bubble.classList.toggle('hidden', !minimized);
   }
@@ -651,27 +611,41 @@ export async function createFloatingWidget({ provider, onScan }) {
     statusNote.classList.remove('hidden');
   }
 
+  function getStatusTitleForError(message = '') {
+    const normalized = String(message).toLowerCase();
+
+    if (normalized.includes('log in')) {
+      return 'Login required';
+    }
+
+    if (normalized.includes('open a gmail message') || normalized.includes('open an outlook message') || normalized.includes('open an email')) {
+      return 'Open an email first';
+    }
+
+    return 'Unable to analyze';
+  }
+
   function showResult(result) {
     clearStatusNote();
     content.innerHTML = renderResult(result);
     content.classList.remove('hidden');
     scanButton.textContent = 'Analyze Again';
+    bindInteractiveSections();
   }
 
-  // Re-bind section toggles after each result render because the content is replaced wholesale.
   function bindInteractiveSections() {
-    shadow.querySelectorAll('.section-header').forEach((button) => {
+    panelShadow.querySelectorAll('.section-header').forEach((button) => {
       button.addEventListener('click', () => {
-        const body = shadow.getElementById(`section-body-${button.dataset.section}`);
+        const body = panelShadow.getElementById(`section-body-${button.dataset.section}`);
         const isOpen = body.classList.contains('open');
         body.classList.toggle('open');
         button.setAttribute('aria-expanded', String(!isOpen));
       });
     });
 
-    shadow.querySelectorAll('.issue-card-header').forEach((button) => {
+    panelShadow.querySelectorAll('.issue-card-header').forEach((button) => {
       button.addEventListener('click', () => {
-        const detail = shadow.getElementById(`issue-detail-${button.dataset.issue}`);
+        const detail = panelShadow.getElementById(`issue-detail-${button.dataset.issue}`);
         const isOpen = detail.classList.contains('open');
         detail.classList.toggle('open');
         button.setAttribute('aria-expanded', String(!isOpen));
@@ -698,17 +672,18 @@ export async function createFloatingWidget({ provider, onScan }) {
     scanButton.textContent = 'Analyzing...';
 
     try {
-      // `onScan` is supplied by the provider entry file and returns a mock or backend result.
       const result = await onScan();
       if (result?.ok === false) {
         throw new Error(result.error || 'Scan request failed.');
       }
 
       showResult(result?.result || result);
-      bindInteractiveSections();
     } catch (error) {
       content.classList.add('hidden');
-      showStatusNote('Open an email first', error.message || 'Unable to scan this message right now.');
+      showStatusNote(
+        getStatusTitleForError(error.message),
+        error.message || 'Unable to scan this message right now.'
+      );
       scanButton.textContent = 'Analyze Email';
     } finally {
       scanButton.disabled = false;
@@ -717,77 +692,9 @@ export async function createFloatingWidget({ provider, onScan }) {
       }
     }
   });
-
-  attachDragBehavior({
-    target: host,
-    handles: [dragHandle, bubble],
-    onMove: async (position) => {
-      await saveWidgetState({ position });
-    }
-  });
 }
 
-function attachDragBehavior({ target, handles, onMove }) {
-  let activePointerId = null;
-  let startPointerX = 0;
-  let startPointerY = 0;
-  let startLeft = 0;
-  let startTop = 0;
-  let moved = false;
-
-  function onPointerMove(event) {
-    if (event.pointerId !== activePointerId) {
-      return;
-    }
-
-    const nextLeft = Math.max(8, startLeft + (event.clientX - startPointerX));
-    const nextTop = Math.max(8, startTop + (event.clientY - startPointerY));
-    target.style.left = `${nextLeft}px`;
-    target.style.top = `${nextTop}px`;
-    target.style.right = 'auto';
-    target.style.bottom = 'auto';
-    moved = true;
-  }
-
-  async function onPointerUp(event) {
-    if (event.pointerId !== activePointerId) {
-      return;
-    }
-
-    const rect = target.getBoundingClientRect();
-    activePointerId = null;
-    window.removeEventListener('pointermove', onPointerMove);
-    window.removeEventListener('pointerup', onPointerUp);
-    window.removeEventListener('pointercancel', onPointerUp);
-
-    if (moved) {
-      await onMove({ left: Math.round(rect.left), top: Math.round(rect.top) });
-    }
-  }
-
-  handles.forEach((handle) => {
-    handle.addEventListener('pointerdown', (event) => {
-      if (event.button !== 0) {
-        return;
-      }
-
-      // Do not start dragging when the user is interacting with a control inside the header.
-      if (event.target instanceof Element && event.target.closest('[data-no-drag="true"], button, a, input, textarea, select')) {
-        return;
-      }
-
-      const rect = target.getBoundingClientRect();
-      activePointerId = event.pointerId;
-      startPointerX = event.clientX;
-      startPointerY = event.clientY;
-      startLeft = rect.left;
-      startTop = rect.top;
-      moved = false;
-
-      handle.setPointerCapture(event.pointerId);
-      window.addEventListener('pointermove', onPointerMove);
-      window.addEventListener('pointerup', onPointerUp);
-      window.addEventListener('pointercancel', onPointerUp);
-    });
-  });
+export function removeFloatingWidget() {
+  document.getElementById(WIDGET_HOST_ID)?.remove();
+  document.getElementById(WIDGET_BUBBLE_HOST_ID)?.remove();
 }

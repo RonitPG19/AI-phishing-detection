@@ -13,3 +13,18 @@ export const DEFAULT_API_CONFIG = {
   endpoint: '',
   enabled: false
 };
+
+export const DEFAULT_AUTH_CONFIG = {
+  baseUrl: 'http://127.0.0.1:5001'
+};
+
+export const FLASK_AUTH_BASE_URL = 'http://127.0.0.1:5001';
+
+export const FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyC07-2Lf1Cn0mT9WECIAcEELtR3v7sOHzk',
+  authDomain: 'tribunal-ai.firebaseapp.com',
+  projectId: 'tribunal-ai',
+  storageBucket: 'tribunal-ai.firebasestorage.app',
+  messagingSenderId: '471298955614',
+  appId: '1:471298955614:web:43c54fcd05578aca9a17cf'
+};
