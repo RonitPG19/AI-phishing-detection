@@ -5,7 +5,9 @@ import { AdminHeader } from "@/components/layout/AdminHeader"
 import { AdminSidebar } from "@/components/layout/AdminSidebar"
 import { BottomNav } from "@/components/layout/BottomNav"
 import { pageMeta } from "@/lib/dashboard-data"
+import { getStoredAuthSession, logoutFromFirebaseAndFlask } from "@/lib/auth"
 import { getPathForRoute, getRouteFromPath } from "@/lib/routing"
+import { ForgotPasswordPage } from "@/pages/ForgotPasswordPage"
 import { LoginPage } from "@/pages/LoginPage"
 import { OverviewPage } from "@/pages/OverviewPage"
 import { ReportsPage } from "@/pages/ReportsPage"
@@ -25,6 +27,7 @@ const pageComponents = {
 const authComponents = {
   login: LoginPage,
   signup: SignupPage,
+  forgotPassword: ForgotPasswordPage,
 }
 
 function getCurrentRoute() {
@@ -33,8 +36,13 @@ function getCurrentRoute() {
   return getRouteFromPath(window.location.pathname)
 }
 
+function isProtectedRoute(route) {
+  return !authComponents[route]
+}
+
 export default function App() {
   const [route, setRoute] = useState(getCurrentRoute)
+  const [authSession, setAuthSession] = useState(() => getStoredAuthSession())
   const [theme, setTheme] = useState(() => {
     if (typeof window === "undefined") return "light"
     return localStorage.getItem("tribunal_admin_theme") || "light"
@@ -55,6 +63,25 @@ export default function App() {
     localStorage.setItem("tribunal_admin_theme", theme)
   }, [theme])
 
+  useEffect(() => {
+    if (!authSession?.accessToken && isProtectedRoute(route)) {
+      const loginPath = getPathForRoute("login")
+      if (window.location.pathname !== loginPath) {
+        window.history.replaceState({}, "", loginPath)
+      }
+      setRoute("login")
+      return
+    }
+
+    if (authSession?.accessToken && authComponents[route]) {
+      const overviewPath = getPathForRoute("overview")
+      if (window.location.pathname !== overviewPath) {
+        window.history.replaceState({}, "", overviewPath)
+      }
+      setRoute("overview")
+    }
+  }, [authSession, route])
+
   const navigateTo = (nextRoute) => {
     const nextPath = getPathForRoute(nextRoute)
 
@@ -65,6 +92,17 @@ export default function App() {
     setRoute(nextRoute)
   }
 
+  const handleAuthSuccess = (session) => {
+    setAuthSession(session)
+    navigateTo("overview")
+  }
+
+  const handleLogout = async () => {
+    await logoutFromFirebaseAndFlask()
+    setAuthSession(null)
+    navigateTo("login")
+  }
+
   if (authComponents[route]) {
     const AuthPage = authComponents[route]
 
@@ -72,6 +110,7 @@ export default function App() {
       <AuthPage
         theme={theme}
         onNavigate={navigateTo}
+        onAuthSuccess={handleAuthSuccess}
         onThemeToggle={() => setTheme(theme === "dark" ? "light" : "dark")}
       />
     )
@@ -84,7 +123,12 @@ export default function App() {
       <AdminSidebar activePage={route} onPageChange={navigateTo} />
 
       <SidebarInset>
-        <AdminHeader theme={theme} onThemeToggle={() => setTheme(theme === "dark" ? "light" : "dark")} />
+        <AdminHeader
+          theme={theme}
+          authSession={authSession}
+          onLogout={handleLogout}
+          onThemeToggle={() => setTheme(theme === "dark" ? "light" : "dark")}
+        />
 
         <main className="flex-1 space-y-6 px-4 pb-28 pt-12 md:px-6 md:pb-10 md:pt-14">
           <div>
