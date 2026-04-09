@@ -8,23 +8,25 @@ import { pageMeta } from "@/lib/dashboard-data"
 import { getStoredAuthSession, logoutFromFirebaseAndFlask } from "@/lib/auth"
 import { getPathForRoute, getRouteFromPath } from "@/lib/routing"
 import { ForgotPasswordPage } from "@/pages/ForgotPasswordPage"
+import { LandingPage } from "@/pages/LandingPage"
 import { LoginPage } from "@/pages/LoginPage"
 import { OverviewPage } from "@/pages/OverviewPage"
 import { ReportsPage } from "@/pages/ReportsPage"
-import { ScansPage } from "@/pages/ScansPage"
+// import { ScansPage } from "@/pages/ScansPage"
 import { SettingsPage } from "@/pages/SettingsPage"
 import { SignupPage } from "@/pages/SignupPage"
 import { UsersPage } from "@/pages/UsersPage"
 
 const pageComponents = {
   overview: OverviewPage,
-  scans: ScansPage,
+  // scans: ScansPage,
   reports: ReportsPage,
   users: UsersPage,
   settings: SettingsPage,
 }
 
 const authComponents = {
+  landing: LandingPage,
   login: LoginPage,
   signup: SignupPage,
   forgotPassword: ForgotPasswordPage,
@@ -116,24 +118,28 @@ export default function App() {
     )
   }
 
-  const ActivePage = pageComponents[route]
+  const safeRoute = pageComponents[route] ? route : "overview"
+  const ActivePage = pageComponents[safeRoute]
 
   return (
     <SidebarProvider defaultOpen>
-      <AdminSidebar activePage={route} onPageChange={navigateTo} />
+      <AdminSidebar
+        activePage={route}
+        onPageChange={navigateTo}
+        authSession={authSession}
+        onLogout={handleLogout}
+      />
 
       <SidebarInset>
         <AdminHeader
           theme={theme}
-          authSession={authSession}
-          onLogout={handleLogout}
           onThemeToggle={() => setTheme(theme === "dark" ? "light" : "dark")}
         />
 
-        <main className="flex-1 space-y-6 px-4 pb-28 pt-12 md:px-6 md:pb-10 md:pt-14">
+        <main className="flex-1 space-y-6 px-4 pb-28 pt-6 md:px-6 md:pb-4 md:pt-2">
           <div>
-            <h1 className="text-3xl font-semibold">{pageMeta[route].title}</h1>
-            <p className="text-sm text-muted-foreground">{pageMeta[route].description}</p>
+            <h1 className="text-3xl font-semibold">{pageMeta[safeRoute].title}</h1>
+            <p className="text-sm text-muted-foreground">{pageMeta[safeRoute].description}</p>
           </div>
 
           <ActivePage />

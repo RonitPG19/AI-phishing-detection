@@ -1,10 +1,12 @@
 import { initializeApp, getApps } from "firebase/app"
 import {
+  GoogleAuthProvider,
   createUserWithEmailAndPassword,
   getAuth,
   sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut,
 } from "firebase/auth"
 
@@ -103,6 +105,39 @@ export async function fetchUserProfile(accessToken) {
   return data?.user || null
 }
 
+async function exchangeFirebaseUserWithFlask(user, fallbackEmail) {
+  const firebaseIdToken = await user.getIdToken()
+  const authData = await requestFlask("/api/auth/firebase-login", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${firebaseIdToken}`,
+    },
+  })
+
+  const accessToken = authData.access || ""
+  const refreshToken = authData.refresh || ""
+
+  if (!accessToken) {
+    throw new Error("Login succeeded but no access token was returned.")
+  }
+
+  const profile = await fetchUserProfile(accessToken).catch(() => null)
+
+  const session = {
+    accessToken,
+    refreshToken,
+    user: {
+      ...(profile || {}),
+      email: profile?.email || user.email || fallbackEmail || "",
+      provider: profile?.provider || user.providerData?.[0]?.providerId || "firebase",
+    },
+    loggedInAt: new Date().toISOString(),
+  }
+
+  saveStoredAuthSession(session)
+  return session
+}
+
 export async function signUpWithFirebase({ email, password }) {
   const auth = getFirebaseAuth()
   const credentials = await createUserWithEmailAndPassword(auth, email, password)
@@ -125,35 +160,16 @@ export async function loginWithFirebaseAndFlask({ email, password }) {
     throw new Error("Verify your email first, then log in.")
   }
 
-  const firebaseIdToken = await credentials.user.getIdToken()
-  const authData = await requestFlask("/api/auth/firebase-login", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${firebaseIdToken}`,
-    },
-  })
+  return exchangeFirebaseUserWithFlask(credentials.user, email)
+}
 
-  const accessToken = authData.access || ""
-  const refreshToken = authData.refresh || ""
+export async function loginWithGoogleAndFlask() {
+  const auth = getFirebaseAuth()
+  const provider = new GoogleAuthProvider()
+  provider.setCustomParameters({ prompt: "select_account" })
 
-  if (!accessToken) {
-    throw new Error("Login succeeded but no access token was returned.")
-  }
-
-  const user = await fetchUserProfile(accessToken).catch(() => null)
-  const session = {
-    accessToken,
-    refreshToken,
-    user: {
-      ...(user || {}),
-      email: user?.email || credentials.user.email || email,
-      provider: user?.provider || "firebase",
-    },
-    loggedInAt: new Date().toISOString(),
-  }
-
-  saveStoredAuthSession(session)
-  return session
+  const result = await signInWithPopup(auth, provider)
+  return exchangeFirebaseUserWithFlask(result.user, result.user.email || "")
 }
 
 export async function sendFirebasePasswordReset(email) {

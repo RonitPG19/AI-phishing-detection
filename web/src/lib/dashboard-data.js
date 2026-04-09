@@ -1,28 +1,26 @@
-﻿import {
+import {
   Activity,
   AlertTriangle,
   FileText,
   LayoutDashboard,
   Link2,
   Mail,
-  Settings,
   ShieldAlert,
   Users
 } from "lucide-react"
 
 export const navItems = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "scans", label: "Scans", icon: ShieldAlert },
+  // { id: "scans", label: "Scans", icon: ShieldAlert },
   { id: "reports", label: "Reports", icon: FileText },
-  { id: "users", label: "Users", icon: Users },
-  { id: "settings", label: "Settings", icon: Settings }
+  { id: "users", label: "User Management", icon: Users }
 ]
 
 export const pageMeta = {
   overview: { title: "Admin Dashboard", description: "Operational summary of recent scans." },
-  scans: { title: "Scans", description: "Review scans and risk signals." },
+  // scans: { title: "Scans", description: "Review scans and risk signals." },
   reports: { title: "Reports", description: "Scheduled and on-demand summaries." },
-  users: { title: "Users", description: "Roles and analyst activity." },
+  users: { title: "User Management", description: "Manage platform users directly from the database." },
   settings: { title: "Settings", description: "Preferences and system controls." }
 }
 
@@ -41,15 +39,6 @@ export const threatDistribution = [
   { label: "Medium", value: 14, variant: "medium" },
   { label: "High", value: 7, variant: "high" },
   { label: "Critical", value: 3, variant: "critical" }
-]
-
-export const scanLogs = [
-  { id: "SC-1294", subject: "Invoice Overdue", source: "Gmail", threat: "high", time: "2m ago" },
-  { id: "SC-1293", subject: "Account Verification", source: "Outlook", threat: "medium", time: "12m ago" },
-  { id: "SC-1292", subject: "Monthly Statement", source: "Gmail", threat: "safe", time: "26m ago" },
-  { id: "SC-1291", subject: "Password Expiring", source: "Outlook", threat: "low", time: "41m ago" },
-  { id: "SC-1290", subject: "Updated Payroll Policy", source: "Gmail", threat: "safe", time: "1h ago" },
-  { id: "SC-1289", subject: "Security Alert", source: "Gmail", threat: "high", time: "2h ago" }
 ]
 
 export const alerts = [
