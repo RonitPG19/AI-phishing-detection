@@ -23,10 +23,21 @@ function normalizeHeaders(headers = {}) {
   );
 }
 
+function extractEmailAddress(value = '') {
+  const input = String(value || '').trim();
+  if (!input) {
+    return '';
+  }
+
+  // Accept both plain addresses and display-name formats like "Name <user@domain.com>".
+  const match = input.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  return match ? match[0].toLowerCase() : '';
+}
+
 function buildApiPayload(payload = {}) {
   return {
     subject: payload.subject || '',
-    from: payload.from || '',
+    from: extractEmailAddress(payload.from),
     bodyHtml: payload.bodyHtml || '',
     bodyText: payload.bodyText || '',
     headers: normalizeHeaders(payload.headers)
@@ -166,6 +177,10 @@ export async function scanEmailWithApi(payload) {
 
   const apiPayload = buildApiPayload(payload);
 
+  if (!apiPayload.from) {
+    throw new Error('Sender email could not be extracted from this message. Refresh the page and try again.');
+  }
+
   // The background script owns the network boundary so auth/retry logic can stay centralized.
   const response = await fetch(config.endpoint, {
     method: 'POST',
@@ -177,7 +192,20 @@ export async function scanEmailWithApi(payload) {
   });
 
   if (!response.ok) {
-    throw new Error(`API request failed with status ${response.status}`);
+    let errorMessage = `API request failed with status ${response.status}`;
+
+    try {
+      const errorPayload = await response.json();
+      if (errorPayload?.fields?.from) {
+        errorMessage = errorPayload.fields.from;
+      } else if (errorPayload?.error) {
+        errorMessage = errorPayload.error;
+      }
+    } catch {
+      // Fall back to the status-based message when the backend does not return JSON.
+    }
+
+    throw new Error(errorMessage);
   }
 
   const apiResult = await response.json();
