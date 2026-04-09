@@ -6,6 +6,7 @@ export const ROUTE_PATHS = {
   settings: "/settings",
   login: "/login",
   signup: "/signup",
+  forgotPassword: "/forgot-password",
 }
 
 const PATH_TO_ROUTE = {
@@ -17,6 +18,7 @@ const PATH_TO_ROUTE = {
   "/settings": "settings",
   "/login": "login",
   "/signup": "signup",
+  "/forgot-password": "forgotPassword",
 }
 
 export function getRouteFromPath(pathname) {

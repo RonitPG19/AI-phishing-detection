@@ -1,10 +1,17 @@
+import { DEFAULT_API_CONFIG, DEFAULT_AUTH_CONFIG } from './constants.js';
+
 // Centralize storage keys here so popup, content scripts, and background stay in sync.
 const STORAGE_KEYS = {
   API_CONFIG: 'tribunal_api_config',
+  AUTH_CONFIG: 'tribunal_auth_config',
+  AUTH_SESSION: 'tribunal_auth_session',
+  SCAN_HISTORY: 'tribunal_history',
   WIDGET_STATE: 'tribunal_widget_state',
   WIDGET_PREFERENCES: 'tribunal_widget_preferences',
   LAST_SCAN_DEBUG: 'tribunal_last_scan_debug'
 };
+
+const MAX_HISTORY_ENTRIES = 50;
 
 const DEFAULT_WIDGET_STATE = {
   minimized: false,
@@ -21,13 +28,88 @@ const DEFAULT_SCAN_DEBUG = {
   updatedAt: null
 };
 
+const DEFAULT_SCAN_HISTORY = [];
+
+const DEFAULT_AUTH_SESSION = {
+  accessToken: '',
+  refreshToken: '',
+  user: null,
+  loggedInAt: null
+};
+
 export async function getApiConfig() {
   const result = await chrome.storage.local.get(STORAGE_KEYS.API_CONFIG);
-  return result[STORAGE_KEYS.API_CONFIG] || { endpoint: '', enabled: false };
+  return {
+    ...DEFAULT_API_CONFIG,
+    ...(result[STORAGE_KEYS.API_CONFIG] || {})
+  };
 }
 
 export async function saveApiConfig(config) {
   await chrome.storage.local.set({ [STORAGE_KEYS.API_CONFIG]: config });
+}
+
+export async function getAuthConfig() {
+  const result = await chrome.storage.local.get(STORAGE_KEYS.AUTH_CONFIG);
+  return {
+    ...DEFAULT_AUTH_CONFIG,
+    ...(result[STORAGE_KEYS.AUTH_CONFIG] || {})
+  };
+}
+
+export async function saveAuthConfig(config) {
+  const currentConfig = await getAuthConfig();
+  await chrome.storage.local.set({
+    [STORAGE_KEYS.AUTH_CONFIG]: {
+      ...currentConfig,
+      ...config
+    }
+  });
+}
+
+export async function getAuthSession() {
+  const result = await chrome.storage.local.get(STORAGE_KEYS.AUTH_SESSION);
+  return {
+    ...DEFAULT_AUTH_SESSION,
+    ...(result[STORAGE_KEYS.AUTH_SESSION] || {})
+  };
+}
+
+export async function saveAuthSession(session) {
+  await chrome.storage.local.set({
+    [STORAGE_KEYS.AUTH_SESSION]: {
+      ...DEFAULT_AUTH_SESSION,
+      ...session
+    }
+  });
+}
+
+export async function clearAuthSession() {
+  await chrome.storage.local.remove(STORAGE_KEYS.AUTH_SESSION);
+}
+
+export async function getScanHistory() {
+  const result = await chrome.storage.local.get(STORAGE_KEYS.SCAN_HISTORY);
+  const history = result[STORAGE_KEYS.SCAN_HISTORY];
+  return Array.isArray(history) ? history : DEFAULT_SCAN_HISTORY;
+}
+
+export async function saveScanHistory(history) {
+  await chrome.storage.local.set({
+    [STORAGE_KEYS.SCAN_HISTORY]: Array.isArray(history)
+      ? history.slice(0, MAX_HISTORY_ENTRIES)
+      : DEFAULT_SCAN_HISTORY
+  });
+}
+
+export async function addScanHistoryEntry(entry) {
+  const history = await getScanHistory();
+  history.unshift(entry);
+  await saveScanHistory(history);
+}
+
+export async function clearScanHistory() {
+  await chrome.storage.local.remove(STORAGE_KEYS.SCAN_HISTORY);
 }
 
 export async function getWidgetState() {

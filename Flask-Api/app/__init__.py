@@ -3,9 +3,11 @@ from app.config import Config
 from app.extensions.firebase import init_firebase
 from app.extensions.limiter import limiter
 from app.utils.logger import setup_logger
+from flask_cors import CORS
 
 def create_app():
     app = Flask(__name__)
+    CORS(app)
     app.config.from_object(Config)
 
     setup_logger()

@@ -2,7 +2,7 @@ import { extractGmailEmailDetails, hasActiveGmailEmail } from './extractors/gmai
 import { normalizeEmailPayload } from './extractors/normalizer.js';
 import { createFloatingWidget, removeFloatingWidget, WIDGET_HOST_ID } from './widget.js';
 import { PROVIDERS, RUNTIME_MESSAGES } from '../shared/constants.js';
-import { getWidgetPreferences } from '../shared/storage.js';
+import { getAuthSession, getWidgetPreferences } from '../shared/storage.js';
 
 function buildNormalizedGmailPayload() {
   // Gmail-specific selectors live in the extractor; keep this file focused on orchestration.
@@ -16,6 +16,11 @@ function buildNormalizedGmailPayload() {
 }
 
 async function performGmailScan() {
+  const session = await getAuthSession();
+  if (!session?.accessToken) {
+    throw new Error('Log in to analyze emails with Tribunal.');
+  }
+
   // Only scan when Gmail is showing a concrete message view.
   if (!hasActiveGmailEmail()) {
     throw new Error('Open a Gmail message first, then run Analyze Email.');

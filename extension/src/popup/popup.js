@@ -1,5 +1,17 @@
-import { getLastScanDebug, saveWidgetPreferences } from '../shared/storage.js';
+import {
+  clearScanHistory,
+  getAuthSession,
+  getLastScanDebug,
+  getScanHistory,
+  saveWidgetPreferences
+} from '../shared/storage.js';
 import { RUNTIME_MESSAGES } from '../shared/constants.js';
+import {
+  loginWithFirebaseAndFlask,
+  logoutFromFirebaseAndFlask,
+  sendFirebasePasswordReset,
+  signUpWithFirebase
+} from '../shared/auth-client.js';
 
 const ICONS = {
   shield: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
@@ -14,7 +26,11 @@ const ICONS = {
   'trash-2': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>`,
   'circle-check': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>`,
   'check-circle-2': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg>`,
+  eye: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>`,
+  'eye-off': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 3 18 18"/><path d="M10.58 10.58a2 2 0 0 0 2.83 2.83"/><path d="M9.88 5.09A10.94 10.94 0 0 1 12 4.9c5 0 9.27 3.11 11 7.5a11.8 11.8 0 0 1-1.67 2.68"/><path d="M6.61 6.61A11.84 11.84 0 0 0 1 12.4c1.73 4.39 6 7.5 11 7.5 1.87 0 3.63-.44 5.2-1.22"/></svg>`,
+  user: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21a7 7 0 0 0-14 0"/><circle cx="12" cy="8" r="4"/></svg>`,
   power: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>`,
+  google: `<svg viewBox="0 0 24 24" fill="none"><path d="M21.8 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.5c-.2 1.2-.9 2.3-1.9 3v2.5h3.1c1.8-1.7 3.1-4.2 3.1-7.3Z" fill="currentColor"/><path d="M12 22c2.7 0 4.9-.9 6.6-2.5l-3.1-2.5c-.9.6-2 .9-3.5.9-2.7 0-4.9-1.8-5.7-4.2H3.1v2.6A10 10 0 0 0 12 22Z" fill="currentColor"/><path d="M6.3 13.7c-.2-.6-.3-1.1-.3-1.7s.1-1.2.3-1.7V7.7H3.1A10 10 0 0 0 2 12c0 1.6.4 3 1.1 4.3l3.2-2.6Z" fill="currentColor"/><path d="M12 6.1c1.5 0 2.8.5 3.9 1.5l2.9-2.9C16.9 2.9 14.7 2 12 2A10 10 0 0 0 3.1 7.7l3.2 2.6c.8-2.4 3-4.2 5.7-4.2Z" fill="currentColor"/></svg>`,
   palette: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.647-.494 2.158-1.006.511-.512 1.158-1.406 2.058-2.31 1.62-.05 3.018-.28 4.194-1.282.871-.741 1.59-1.895 1.59-3.402C22 7.5 17.5 2 12 2z"/></svg>`,
   'layout-list': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/><path d="M14 4h7"/><path d="M14 9h7"/><path d="M14 15h7"/><path d="M14 20h7"/></svg>`,
   mail: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>`,
@@ -24,8 +40,6 @@ const ICONS = {
 };
 
 const SETTINGS_KEY = 'tribunal_settings';
-const HISTORY_KEY = 'tribunal_history';
-const MAX_HISTORY_ENTRIES = 50;
 const SUPPORTED_MAIL_HOSTS = [
   'mail.google.com',
   'outlook.cloud.microsoft',
@@ -39,6 +53,7 @@ const DEFAULT_SETTINGS = {
   theme: 'light',
   scanPortions: { header: true, subject: true, body: true, footer: true, links: true, attachments: true }
 };
+const AUTH_FORM_MODE_KEY = 'tribunal_auth_form_mode';
 
 let currentPage = 'scan';
 let scanResults = null;
@@ -46,6 +61,17 @@ let scanError = '';
 let isScanning = false;
 let historyDetailIndex = null;
 let toastTimeout = null;
+let authSession = null;
+let authFormMode = localStorage.getItem(AUTH_FORM_MODE_KEY) || 'login';
+let authError = '';
+let authNotice = '';
+let isAuthSubmitting = false;
+let passwordsVisible = false;
+let authDraft = {
+  email: '',
+  password: '',
+  confirmPassword: ''
+};
 
 function injectIcons(container = document) {
   container.querySelectorAll('[data-icon]').forEach((element) => {
@@ -86,28 +112,6 @@ function getSettings() {
 function saveSettings(nextSettings) {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(nextSettings));
   showSaveToast();
-}
-
-function getHistory() {
-  try {
-    return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
-  } catch {
-    return [];
-  }
-}
-
-function saveHistory(history) {
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, MAX_HISTORY_ENTRIES)));
-}
-
-function addToHistory(result) {
-  const history = getHistory();
-  history.unshift(result);
-  saveHistory(history);
-}
-
-function clearHistory() {
-  localStorage.removeItem(HISTORY_KEY);
 }
 
 function showSaveToast() {
@@ -161,6 +165,158 @@ function getResultSourceLabel(result) {
   }
 
   return 'Unknown Source';
+}
+
+function getAuthDisplayName() {
+  return authSession?.user?.email || authSession?.user?.uid || 'Authenticated user';
+}
+
+function getAuthProviderLabel() {
+  const provider = authSession?.user?.provider || 'firebase';
+  return provider.charAt(0).toUpperCase() + provider.slice(1);
+}
+
+function setAuthFormMode(mode) {
+  authFormMode = mode === 'signup' ? 'signup' : 'login';
+  passwordsVisible = false;
+  authDraft.password = '';
+  authDraft.confirmPassword = '';
+  localStorage.setItem(AUTH_FORM_MODE_KEY, authFormMode);
+}
+
+async function syncAuthState() {
+  authSession = await getAuthSession();
+}
+
+function renderAuthMessage() {
+  if (authError) {
+    return `<div class="auth-message auth-message-error">${escapeHtml(authError)}</div>`;
+  }
+
+  if (authNotice) {
+    return `<div class="auth-message auth-message-success">${escapeHtml(authNotice)}</div>`;
+  }
+
+  return '';
+}
+
+function hasAuthSession() {
+  return Boolean(authSession?.accessToken);
+}
+
+function renderAuthPage() {
+  return `
+    <div class="auth-page page-enter">
+      <div class="auth-page-hero">
+        <h2 class="auth-page-title">Sign in to use Tribunal</h2>
+        <p class="auth-page-copy">Log in to analyze phishing emails with Tribunal.</p>
+      </div>
+
+      <div class="auth-card auth-page-card">
+        <div class="auth-mode-switch" role="tablist" aria-label="Authentication mode">
+          <button class="auth-mode-btn ${authFormMode === 'login' ? 'active' : ''}" data-auth-mode="login" type="button">Login</button>
+          <button class="auth-mode-btn ${authFormMode === 'signup' ? 'active' : ''}" data-auth-mode="signup" type="button">Sign Up</button>
+        </div>
+
+        <form id="auth-form" class="auth-form">
+          <label class="auth-field">
+            <span class="auth-field-label">Email</span>
+            <input type="email" id="auth-email" class="auth-input" autocomplete="username" placeholder="you@example.com" value="${escapeHtml(authDraft.email)}" required />
+          </label>
+
+          <label class="auth-field">
+            <span class="auth-field-label">Password</span>
+            <div class="auth-password-wrap">
+              <input type="${passwordsVisible ? 'text' : 'password'}" id="auth-password" class="auth-input auth-input-password" autocomplete="${authFormMode === 'login' ? 'current-password' : 'new-password'}" placeholder="Enter password" value="${escapeHtml(authDraft.password)}" required />
+              <button class="auth-password-toggle" id="auth-password-toggle" type="button" aria-label="${passwordsVisible ? 'Hide password' : 'Show password'}">
+                <i data-icon="${passwordsVisible ? 'eye-off' : 'eye'}"></i>
+              </button>
+            </div>
+          </label>
+
+          ${authFormMode === 'signup' ? `
+            <label class="auth-field">
+              <span class="auth-field-label">Confirm password</span>
+              <div class="auth-password-wrap">
+                <input type="${passwordsVisible ? 'text' : 'password'}" id="auth-confirm-password" class="auth-input auth-input-password" autocomplete="new-password" placeholder="Confirm password" value="${escapeHtml(authDraft.confirmPassword)}" required />
+                <button class="auth-password-toggle" data-auth-toggle="confirm" type="button" aria-label="${passwordsVisible ? 'Hide password' : 'Show password'}">
+                  <i data-icon="${passwordsVisible ? 'eye-off' : 'eye'}"></i>
+                </button>
+              </div>
+            </label>
+          ` : ''}
+
+          ${renderAuthMessage()}
+
+          <button class="btn-primary auth-action-btn" id="auth-submit-btn" type="submit" ${isAuthSubmitting ? 'disabled' : ''}>
+            <i data-icon="mail"></i>
+            ${isAuthSubmitting ? (authFormMode === 'signup' ? 'Creating account...' : 'Signing in...') : (authFormMode === 'signup' ? 'Create Account' : 'Login')}
+          </button>
+        </form>
+
+        ${authFormMode === 'login' ? `
+          <div class="auth-divider"><span>or</span></div>
+          <button class="btn-secondary auth-action-btn auth-google-btn" id="auth-google-btn" type="button" disabled aria-disabled="true">
+            <i data-icon="google"></i>
+            Sign in with Google
+          </button>
+          <p class="auth-footnote">Google sign-in coming soon.</p>
+        ` : ''}
+
+        ${authFormMode === 'login' ? `
+          <button class="auth-inline-link" id="auth-reset-btn" type="button" ${isAuthSubmitting ? 'disabled' : ''}>
+            Forgot password?
+          </button>
+        ` : `
+          <p class="auth-footnote">After signup, we’ll send a verification email. Log in after you verify it.</p>
+        `}
+      </div>
+    </div>`;
+}
+
+function renderProfilePage() {
+  if (!hasAuthSession()) {
+    return `
+      <div class="empty-state page-enter">
+        <i data-icon="user" class="empty-state-icon"></i>
+        <p class="empty-state-text">Log in to view your Tribunal profile and manage your session.</p>
+        <div class="scan-btn-wrap">
+          <button class="btn-primary" id="open-auth-btn"><i data-icon="mail"></i> Login to Use Profile</button>
+        </div>
+      </div>`;
+  }
+
+  const createdAt = authSession?.user?.created_at || authSession?.loggedInAt || null;
+
+  return `
+    <div class="page-enter">
+      <div class="profile-hero">
+        <div class="profile-avatar"><i data-icon="user"></i></div>
+        <div class="profile-title">Your Profile</div>
+        <div class="profile-subtitle">Signed in and ready to scan.</div>
+      </div>
+
+      <div class="auth-card">
+        <div class="auth-session-row">
+          <span class="auth-session-label">Email</span>
+          <span class="auth-session-value">${escapeHtml(getAuthDisplayName())}</span>
+        </div>
+        <div class="auth-session-row">
+          <span class="auth-session-label">Signed in</span>
+          <span class="auth-session-value">${escapeHtml(formatTimestamp(authSession?.loggedInAt || new Date().toISOString()))}</span>
+        </div>
+        ${createdAt ? `
+          <div class="auth-session-row">
+            <span class="auth-session-label">Account created</span>
+            <span class="auth-session-value">${escapeHtml(formatTimestamp(createdAt))}</span>
+          </div>
+        ` : ''}
+        ${renderAuthMessage()}
+        <button class="btn-secondary auth-action-btn" id="auth-logout-btn" ${isAuthSubmitting ? 'disabled' : ''}>
+          <i data-icon="power"></i> ${isAuthSubmitting ? 'Signing out...' : 'Logout'}
+        </button>
+      </div>
+    </div>`;
 }
 
 function renderIssueCard(issue, sectionKey, index) {
@@ -233,6 +389,12 @@ function renderScanPage() {
   const container = document.getElementById('page-container');
   const settings = getSettings();
 
+  if (!hasAuthSession()) {
+    container.innerHTML = `<div class="empty-state page-enter"><i data-icon="shield" class="empty-state-icon"></i><p class="empty-state-text">Scan is available after login. You can still explore the popup and adjust settings.</p><div class="scan-btn-wrap"><button class="btn-primary" id="open-auth-btn"><i data-icon="user"></i> Login to Use Scan</button></div></div>`;
+    injectIcons(container);
+    return;
+  }
+
   if (isScanning) {
     container.innerHTML = `<div class="scan-loading page-enter"><div class="spinner" aria-label="Scanning"></div><p class="scan-loading-text">Analyzing current email...</p></div>`;
     return;
@@ -254,9 +416,16 @@ function renderScanPage() {
   injectIcons(container);
 }
 
-function renderHistoryPage() {
+async function renderHistoryPage() {
   const container = document.getElementById('page-container');
-  const history = getHistory();
+
+  if (!hasAuthSession()) {
+    container.innerHTML = `<div class="empty-state page-enter"><i data-icon="clock" class="empty-state-icon"></i><p class="empty-state-text">History will appear here after you log in and complete scans.</p></div>`;
+    injectIcons(container);
+    return;
+  }
+
+  const history = await getScanHistory();
 
   if (historyDetailIndex !== null && history[historyDetailIndex]) {
     const result = history[historyDetailIndex];
@@ -286,6 +455,13 @@ function renderSettingsPage() {
 
 async function renderDebugPage() {
   const container = document.getElementById('page-container');
+
+  if (!hasAuthSession()) {
+    container.innerHTML = `<div class="empty-state page-enter"><i data-icon="file-text" class="empty-state-icon"></i><p class="empty-state-text">Debug data is available after login and after running a scan.</p></div>`;
+    injectIcons(container);
+    return;
+  }
+
   container.innerHTML = `<div class="page-enter"><div class="settings-section"><div class="settings-section-title"><i data-icon="file-text"></i> Debug Payload</div><p class="debug-intro">Inspect the exact normalized JSON produced by the most recent scan.</p></div><div class="scan-loading"><div class="spinner" aria-label="Loading debug data"></div><p class="scan-loading-text">Loading debug snapshot...</p></div></div>`;
   injectIcons(container);
 
@@ -298,7 +474,7 @@ function navigateTo(page) {
   historyDetailIndex = null;
 
   document.querySelectorAll('.tab-item').forEach((tab) => {
-    const active = tab.dataset.page === page;
+    const active = tab.dataset.page === currentPage;
     tab.classList.toggle('active', active);
     tab.setAttribute('aria-selected', String(active));
   });
@@ -317,12 +493,24 @@ function renderCurrentPage() {
     return;
   }
 
+  if (currentPage === 'profile') {
+    const container = document.getElementById('page-container');
+    container.innerHTML = hasAuthSession() ? renderProfilePage() : renderAuthPage();
+    injectIcons(container);
+    return;
+  }
+
   if (currentPage === 'settings') {
     renderSettingsPage();
     return;
   }
 
   renderScanPage();
+}
+
+function togglePasswordVisibility() {
+  passwordsVisible = !passwordsVisible;
+  renderCurrentPage();
 }
 
 async function requestActiveScan() {
@@ -361,6 +549,13 @@ async function requestActiveScan() {
 }
 
 async function startScan() {
+  if (!hasAuthSession()) {
+    authError = 'Log in first to run scans.';
+    authNotice = '';
+    renderCurrentPage();
+    return;
+  }
+
   isScanning = true;
   scanResults = null;
   scanError = '';
@@ -369,12 +564,121 @@ async function startScan() {
   try {
     const result = await requestActiveScan();
     scanResults = result;
-    addToHistory(result);
   } catch (error) {
     scanError = error.message || 'Unable to scan the current message.';
   } finally {
     isScanning = false;
     renderScanPage();
+  }
+}
+
+async function handleAuthSubmit() {
+  const emailInput = document.getElementById('auth-email');
+  const passwordInput = document.getElementById('auth-password');
+  const confirmInput = document.getElementById('auth-confirm-password');
+
+  const email = emailInput?.value?.trim() || '';
+  const password = passwordInput?.value || '';
+  const confirmPassword = confirmInput?.value || '';
+
+  authDraft.email = email;
+  authDraft.password = password;
+  authDraft.confirmPassword = confirmPassword;
+
+  authError = '';
+  authNotice = '';
+
+  if (!email || !password) {
+    authError = 'Email and password are both required.';
+    renderCurrentPage();
+    return;
+  }
+
+  if (authFormMode === 'signup') {
+    if (password.length < 6) {
+      authError = 'Use at least 6 characters for the password.';
+      renderCurrentPage();
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      authError = 'Passwords do not match.';
+      renderCurrentPage();
+      return;
+    }
+  }
+
+  isAuthSubmitting = true;
+  renderCurrentPage();
+
+  try {
+    if (authFormMode === 'signup') {
+      await signUpWithFirebase({ email, password });
+      authNotice = 'Account created. Check your inbox, verify your email, then log in.';
+      setAuthFormMode('login');
+      authDraft.password = '';
+      authDraft.confirmPassword = '';
+    } else {
+      await loginWithFirebaseAndFlask({ email, password });
+      await syncAuthState();
+      authNotice = 'Logged in successfully.';
+      currentPage = 'scan';
+      authDraft = { email: '', password: '', confirmPassword: '' };
+    }
+  } catch (error) {
+    authError = error.message || `Unable to ${authFormMode === 'signup' ? 'sign up' : 'log in'} right now.`;
+  } finally {
+    isAuthSubmitting = false;
+    renderCurrentPage();
+  }
+}
+
+async function handleLogout() {
+  authError = '';
+  authNotice = '';
+  isAuthSubmitting = true;
+  renderCurrentPage();
+
+  try {
+    await logoutFromFirebaseAndFlask();
+    await syncAuthState();
+    authNotice = 'Logged out locally.';
+    currentPage = 'auth';
+    authDraft = { email: '', password: '', confirmPassword: '' };
+  } catch (error) {
+    authError = error.message || 'Unable to log out right now.';
+  } finally {
+    isAuthSubmitting = false;
+    renderCurrentPage();
+  }
+}
+
+async function handlePasswordReset() {
+  const emailInput = document.getElementById('auth-email');
+  const email = emailInput?.value?.trim() || '';
+
+  authDraft.email = email;
+
+  authError = '';
+  authNotice = '';
+
+  if (!email) {
+    authError = 'Enter your email first, then request a reset link.';
+    renderCurrentPage();
+    return;
+  }
+
+  isAuthSubmitting = true;
+  renderCurrentPage();
+
+  try {
+    await sendFirebasePasswordReset(email);
+    authNotice = 'Password reset email sent. Check your inbox.';
+  } catch (error) {
+    authError = error.message || 'Unable to send a reset email right now.';
+  } finally {
+    isAuthSubmitting = false;
+    renderCurrentPage();
   }
 }
 
@@ -419,7 +723,7 @@ async function copyReport() {
     }, 1400);
   }
 }
-document.addEventListener('click', (event) => {
+document.addEventListener('click', async (event) => {
   const navTarget = event.target.closest('[data-page]');
   if (navTarget && navTarget.closest('.tab-bar')) {
     navigateTo(navTarget.dataset.page);
@@ -428,6 +732,11 @@ document.addEventListener('click', (event) => {
 
   if (event.target.closest('#scan-btn')) {
     startScan();
+    return;
+  }
+
+  if (event.target.closest('#open-auth-btn')) {
+    navigateTo('profile');
     return;
   }
 
@@ -479,20 +788,44 @@ document.addEventListener('click', (event) => {
   const historyEntry = event.target.closest('.history-entry');
   if (historyEntry) {
     historyDetailIndex = Number(historyEntry.dataset.historyIndex);
-    renderHistoryPage();
+    await renderHistoryPage();
     return;
   }
 
   if (event.target.closest('#history-back-btn')) {
     historyDetailIndex = null;
-    renderHistoryPage();
+    await renderHistoryPage();
     return;
   }
 
   if (event.target.closest('#clear-history-btn')) {
-    clearHistory();
+    await clearScanHistory();
     historyDetailIndex = null;
-    renderHistoryPage();
+    await renderHistoryPage();
+    return;
+  }
+
+  const authModeTarget = event.target.closest('[data-auth-mode]');
+  if (authModeTarget) {
+    authError = '';
+    authNotice = '';
+    setAuthFormMode(authModeTarget.dataset.authMode);
+    renderCurrentPage();
+    return;
+  }
+
+  if (event.target.closest('#auth-password-toggle') || event.target.closest('[data-auth-toggle="confirm"]')) {
+    togglePasswordVisibility();
+    return;
+  }
+
+  if (event.target.closest('#auth-reset-btn')) {
+    handlePasswordReset();
+    return;
+  }
+
+  if (event.target.closest('#auth-logout-btn')) {
+    handleLogout();
   }
 });
 
@@ -526,7 +859,33 @@ document.addEventListener('change', (event) => {
   if (event.target.dataset.portion) {
     settings.scanPortions[event.target.dataset.portion] = event.target.checked;
     saveSettings(settings);
+    return;
   }
+});
+
+document.addEventListener('input', (event) => {
+  if (event.target.id === 'auth-email') {
+    authDraft.email = event.target.value;
+    return;
+  }
+
+  if (event.target.id === 'auth-password') {
+    authDraft.password = event.target.value;
+    return;
+  }
+
+  if (event.target.id === 'auth-confirm-password') {
+    authDraft.confirmPassword = event.target.value;
+  }
+});
+
+document.addEventListener('submit', (event) => {
+  if (event.target.id !== 'auth-form') {
+    return;
+  }
+
+  event.preventDefault();
+  handleAuthSubmit();
 });
 
 document.addEventListener('keydown', (event) => {
@@ -538,8 +897,9 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
-function init() {
+async function init() {
   const settings = getSettings();
+  await syncAuthState();
   applyTheme(settings.theme);
   saveWidgetPreferences({ enabled: settings.floatingPopupEnabled });
   navigateTo('scan');

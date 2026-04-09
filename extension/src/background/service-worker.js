@@ -1,6 +1,6 @@
 import { scanEmailWithApi } from './api-client.js';
 import { RUNTIME_MESSAGES } from '../shared/constants.js';
-import { saveLastScanDebug } from '../shared/storage.js';
+import { addScanHistoryEntry, saveLastScanDebug } from '../shared/storage.js';
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== RUNTIME_MESSAGES.SCAN_EMAIL) {
@@ -12,6 +12,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     .then(() => scanEmailWithApi(message.payload))
     .then(async (result) => {
       await saveLastScanDebug({ payload: message.payload, result });
+      await addScanHistoryEntry(result);
       sendResponse({ ok: true, result });
     })
     .catch(async (error) => {
