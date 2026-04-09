@@ -39,9 +39,13 @@ const DEFAULT_AUTH_SESSION = {
 
 export async function getApiConfig() {
   const result = await chrome.storage.local.get(STORAGE_KEYS.API_CONFIG);
+  const storedConfig = result[STORAGE_KEYS.API_CONFIG] || {};
+
   return {
     ...DEFAULT_API_CONFIG,
-    ...(result[STORAGE_KEYS.API_CONFIG] || {})
+    ...storedConfig,
+    endpoint: String(storedConfig.endpoint || '').trim() || DEFAULT_API_CONFIG.endpoint,
+    enabled: typeof storedConfig.enabled === 'boolean' ? storedConfig.enabled : DEFAULT_API_CONFIG.enabled
   };
 }
 

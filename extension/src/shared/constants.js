@@ -10,8 +10,8 @@ export const RUNTIME_MESSAGES = {
 };
 
 export const DEFAULT_API_CONFIG = {
-  endpoint: '',
-  enabled: false
+  endpoint: 'http://127.0.0.1:8080/api/phishing/scan',
+  enabled: true
 };
 
 export const DEFAULT_AUTH_CONFIG = {
