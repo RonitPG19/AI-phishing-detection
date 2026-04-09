@@ -1,15 +1,12 @@
-﻿import { ChevronRight, Mail } from "lucide-react"
+import { Mail } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   activityBars,
   alerts,
   kpis,
-  scanLogs,
   threatDistribution
 } from "@/lib/dashboard-data"
 
@@ -17,18 +14,30 @@ export function OverviewPage() {
   return (
     <div className="space-y-6">
       <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 md:grid md:grid-cols-2 md:gap-4 md:overflow-visible lg:grid-cols-4">
-        {kpis.map((item) => (
-          <Card key={item.label} className="min-w-[220px] shrink-0 snap-start md:min-w-0">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardDescription>{item.label}</CardDescription>
-                <item.icon className="h-4 w-4 text-muted-foreground" />
-              </div>
-              <CardTitle className="text-2xl">{item.value}</CardTitle>
-              <p className="text-xs text-muted-foreground">{item.delta} vs last week</p>
-            </CardHeader>
-          </Card>
-        ))}
+        {kpis.map((item) => {
+          const isTotalScans = item.label === "Total Scans"
+
+          return (
+            <Card key={item.label} className="min-w-[220px] shrink-0 snap-start md:min-w-0">
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
+                  <CardDescription>{item.label}</CardDescription>
+                  {isTotalScans ? (
+                    <img
+                      src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRkcfTTj0KexcYOXfiw7ceFghwR7Ml3XPPspuhmTvBa2Q&s"
+                      alt="Total scans visual"
+                      className="h-8 w-8 rounded-full object-cover"
+                    />
+                  ) : (
+                    <item.icon className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </div>
+                <CardTitle className="text-2xl">{item.value}</CardTitle>
+                <p className="text-xs text-muted-foreground">{item.delta} vs last week</p>
+              </CardHeader>
+            </Card>
+          )
+        })}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-7">
@@ -106,65 +115,7 @@ export function OverviewPage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-7">
-        <Card className="lg:col-span-4">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Scan Logs</CardTitle>
-                <CardDescription>Most recent detections</CardDescription>
-              </div>
-              <Button variant="outline" size="sm">
-                View all
-                <ChevronRight className="ml-2 h-4 w-4" />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3 sm:hidden">
-              {scanLogs.map((scan) => (
-                <div key={scan.id} className="rounded-lg border border-border p-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium">{scan.subject}</p>
-                    <Badge variant={scan.threat}>{scan.threat}</Badge>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                    <span>{scan.id} · {scan.source}</span>
-                    <span>{scan.time}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="hidden sm:block">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Scan ID</TableHead>
-                    <TableHead>Subject</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead>Threat</TableHead>
-                    <TableHead>Time</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {scanLogs.map((scan) => (
-                    <TableRow key={scan.id}>
-                      <TableCell className="font-medium">{scan.id}</TableCell>
-                      <TableCell>{scan.subject}</TableCell>
-                      <TableCell>{scan.source}</TableCell>
-                      <TableCell>
-                        <Badge variant={scan.threat}>{scan.threat}</Badge>
-                      </TableCell>
-                      <TableCell>{scan.time}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="space-y-4 lg:col-span-3">
+        <div className="space-y-4 lg:col-span-3 lg:col-start-5">
           <Card>
             <CardHeader>
               <CardTitle>Alerts</CardTitle>

@@ -1,5 +1,6 @@
 export const ROUTE_PATHS = {
-  overview: "/",
+  landing: "/",
+  overview: "/overview",
   scans: "/scans",
   reports: "/reports",
   users: "/users",
@@ -10,7 +11,7 @@ export const ROUTE_PATHS = {
 }
 
 const PATH_TO_ROUTE = {
-  "/": "overview",
+  "/": "landing",
   "/overview": "overview",
   "/scans": "scans",
   "/reports": "reports",
@@ -26,9 +27,9 @@ export function getRouteFromPath(pathname) {
 
   const normalizedPath = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname
 
-  return PATH_TO_ROUTE[normalizedPath] || "overview"
+  return PATH_TO_ROUTE[normalizedPath] || "landing"
 }
 
 export function getPathForRoute(route) {
-  return ROUTE_PATHS[route] || ROUTE_PATHS.overview
+  return ROUTE_PATHS[route] || ROUTE_PATHS.landing
 }
