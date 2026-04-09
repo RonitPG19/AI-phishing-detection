@@ -8,6 +8,7 @@ import {
 import { RUNTIME_MESSAGES } from '../shared/constants.js';
 import {
   loginWithFirebaseAndFlask,
+  loginWithGoogleAndFlask,
   logoutFromFirebaseAndFlask,
   sendFirebasePasswordReset,
   signUpWithFirebase
@@ -260,7 +261,7 @@ function renderAuthPage() {
             <i data-icon="google"></i>
             Sign in with Google
           </button>
-          <p class="auth-footnote">Google sign-in coming soon.</p>
+          
         ` : ''}
 
         ${authFormMode === 'login' ? `
@@ -653,6 +654,25 @@ async function handleLogout() {
   }
 }
 
+async function handleGoogleAuth() {
+  authError = '';
+  authNotice = '';
+  isAuthSubmitting = true;
+  renderCurrentPage();
+
+  try {
+    await loginWithGoogleAndFlask();
+    await syncAuthState();
+    authNotice = 'Logged in with Google successfully.';
+    currentPage = 'scan';
+    authDraft = { email: '', password: '', confirmPassword: '' };
+  } catch (error) {
+    authError = error.message || 'Unable to continue with Google right now.';
+  } finally {
+    isAuthSubmitting = false;
+    renderCurrentPage();
+  }
+}
 async function handlePasswordReset() {
   const emailInput = document.getElementById('auth-email');
   const email = emailInput?.value?.trim() || '';
@@ -824,6 +844,11 @@ document.addEventListener('click', async (event) => {
     return;
   }
 
+  if (event.target.closest('#auth-google-btn')) {
+    handleGoogleAuth();
+    return;
+  }
+
   if (event.target.closest('#auth-logout-btn')) {
     handleLogout();
   }
@@ -907,3 +932,4 @@ async function init() {
 }
 
 init();
+
