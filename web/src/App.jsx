@@ -45,25 +45,12 @@ function isProtectedRoute(route) {
 export default function App() {
   const [route, setRoute] = useState(getCurrentRoute)
   const [authSession, setAuthSession] = useState(() => getStoredAuthSession())
-  const [theme, setTheme] = useState(() => {
-    if (typeof window === "undefined") return "light"
-    return localStorage.getItem("tribunal_admin_theme") || "light"
-  })
-
-  useEffect(() => {
-    const handlePopState = () => setRoute(getCurrentRoute())
-
-    window.addEventListener("popstate", handlePopState)
-    handlePopState()
-
-    return () => window.removeEventListener("popstate", handlePopState)
-  }, [])
+  const [theme] = useState("dark")
 
   useEffect(() => {
     const root = document.documentElement
-    root.classList.toggle("dark", theme === "dark")
-    localStorage.setItem("tribunal_admin_theme", theme)
-  }, [theme])
+    root.classList.add("dark")
+  }, [])
 
   useEffect(() => {
     if (!authSession?.accessToken && isProtectedRoute(route)) {

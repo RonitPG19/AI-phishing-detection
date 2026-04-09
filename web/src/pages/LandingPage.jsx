@@ -1,23 +1,12 @@
-import { ArrowRight, Moon, PanelsTopLeft, Sun } from "lucide-react"
+import { useState, useRef, useEffect } from "react"
+import { motion, AnimatePresence } from "framer-motion"
+import { Moon, Sun } from "lucide-react"
 
 import { PublicNavbar } from "@/components/PublicNavbar"
 import { Button } from "@/components/ui/button"
-import { getPathForRoute } from "@/lib/routing"
-
-const workflowCards = [
-  {
-    title: "Scan in the inbox",
-    copy: "Open a live Gmail or Outlook thread, run the extension, and capture the exact message someone is about to act on.",
-  },
-  {
-    title: "Review what matters",
-    copy: "Turn messy signals into a short verdict with link anomalies, sender mismatches, and body-level findings lined up clearly.",
-  },
-  {
-    title: "Track the report",
-    copy: "Push the verdict into the dashboard so triage, follow-up, and accountability stay in one review flow.",
-  },
-]
+import { HeroSection } from "@/components/landing/HeroSection"
+import { WorkflowCards } from "@/components/landing/WorkflowCards"
+import { FeatureShowcase } from "@/components/landing/FeatureShowcase"
 
 const footerColumns = [
   {
@@ -34,127 +23,110 @@ const footerColumns = [
   },
 ]
 
-export function LandingPage({ theme, onNavigate, onThemeToggle }) {
-  const handleNavigate = (event, route) => {
-    if (!onNavigate) return
+function GlowCard({ children, className }) {
+  const cardRef = useRef(null)
 
-    event.preventDefault()
-    onNavigate(route)
+  const handleMouseMove = (e) => {
+    if (!cardRef.current) return
+    const rect = cardRef.current.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    const centerX = rect.width / 2
+    const centerY = rect.height / 2
+
+    // Calculate angle
+    const angle = Math.atan2(y - centerY, x - centerX) * (180 / Math.PI) + 90
+    cardRef.current.style.setProperty("--cursor-angle", `${angle}deg`)
+
+    // Calculate proximity
+    cardRef.current.style.setProperty("--edge-proximity", "100")
   }
 
   return (
-    <main className="min-h-screen bg-white text-foreground dark:bg-background">
-      <div className="relative overflow-hidden">
-        <div className="pointer-events-none absolute inset-0">
-          <div className="absolute inset-x-0 top-0 h-64 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_58%)] dark:bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_58%)]" />
-          <div className="absolute inset-x-0 bottom-0 h-80 bg-[radial-gradient(circle_at_bottom,rgba(0,0,0,0.06),transparent_60%)] dark:bg-[radial-gradient(circle_at_bottom,rgba(255,255,255,0.05),transparent_60%)]" />
-          <div className="absolute left-[12%] top-[18%] h-72 w-72 rounded-full bg-black/[0.05] blur-[140px] dark:bg-white/[0.06]" />
-          <div className="absolute right-[8%] top-[28%] h-96 w-96 rounded-full bg-black/[0.04] blur-[180px] dark:bg-white/[0.04]" />
+    <div
+      ref={cardRef}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={() => {
+        if (cardRef.current) cardRef.current.style.setProperty("--edge-proximity", "0")
+      }}
+      className={`border-glow-card ${className}`}
+    >
+      <div className="edge-light" />
+      <div className="border-glow-inner">
+        {children}
+      </div>
+    </div>
+  )
+}
+
+export function LandingPage({ theme, onNavigate, onThemeToggle }) {
+  return (
+    <main className="min-h-screen bg-background text-foreground selection:bg-primary/30">
+      {/* Dynamic Background Noise/Gradient */}
+      <div className="pointer-events-none fixed inset-0 z-0">
+        <div className="absolute inset-0 bg-[url('https://res.cloudinary.com/djpkwtowz/image/upload/v1715478440/noise_uvw6h0.png')] opacity-20 mix-blend-overlay" />
+        <div className="absolute inset-x-0 top-0 h-[500px] bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(120,119,198,0.3),rgba(255,255,255,0))] dark:bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(120,119,198,0.15),rgba(255,255,255,0))]" />
+      </div>
+
+      <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <header className="fixed top-4 inset-x-0 z-50 px-4 flex justify-center">
+          <div className="relative w-full max-w-5xl flex items-center justify-center">
+            <PublicNavbar onNavigate={onNavigate} />
+          </div>
+        </header>
+
+        <div className="space-y-32 pb-32">
+          <HeroSection onNavigate={onNavigate} />
+
+          <FeatureShowcase />
+
+          <WorkflowCards />
         </div>
 
-        <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6 lg:px-8">
-          <div className="relative pt-5">
-            <PublicNavbar onNavigate={onNavigate} />
-            <div className="absolute right-0 top-1/2 -translate-y-1/2">
-              <Button
-                variant="ghost"
-                size="icon"
-                type="button"
-                className="rounded-full text-foreground hover:bg-accent/40 hover:text-foreground"
-                onClick={onThemeToggle}
-                aria-label="Toggle theme"
-              >
-                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-              </Button>
+        <footer className="mt-12 border-t border-border/40 pb-12 pt-10">
+          <div className="grid gap-10 md:grid-cols-[1.5fr_repeat(3,minmax(0,1fr))]">
+            <div className="max-w-sm">
+              <div className="text-2xl font-semibold tracking-tight text-foreground flex items-center gap-2">
+                <div className="h-6 w-6 rounded bg-primary text-primary-foreground flex items-center justify-center font-bold text-xs">T</div>
+                Tribunal
+              </div>
+              <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+                An inbox-first phishing review workflow for teams who want clearer judgment, cleaner reports, and less noise.
+              </p>
             </div>
+
+            {footerColumns.map((column) => (
+              <div key={column.title}>
+                <h3 className="text-sm font-semibold text-foreground tracking-wide">{column.title}</h3>
+                <ul className="mt-5 space-y-3.5">
+                  {column.links.map((link) => (
+                    <li key={link}>
+                      <a href="#" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                        {link}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
 
-          <section className="grid gap-12 pb-14 pt-16 lg:grid-cols-[minmax(0,1.02fr)_minmax(360px,0.98fr)] lg:items-center lg:gap-10 lg:pt-20">
-            <div className="space-y-8">
-              <div className="space-y-5">
-                <h1 className="max-w-3xl text-5xl font-semibold leading-[0.92] tracking-[-0.06em] sm:text-6xl xl:text-[5.35rem]">
-                  Review the suspicious parts, not just the score.
-                </h1>
-                <p className="max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">
-                  Tribunal pairs an inbox-side extension with a sharper review dashboard so phishing analysis feels like a product workflow instead of a pile of warnings.
-                </p>
+          {/* Large Branding Text with Border Glow Effect */}
+          <div className="mt-20 pt-10 flex justify-center overflow-hidden">
+            <GlowCard className="bg-transparent border-none !shadow-none !rounded-none">
+              <div className="flex select-none cursor-default py-10 px-20">
+                {"Tribunal".split("").map((letter, i) => (
+                  <span
+                    key={i}
+                    className="text-[14vw] font-bold tracking-tighter text-white/5 opacity-80 leading-none transition-all duration-300 relative"
+                  >
+                    {letter}
+                  </span>
+                ))}
               </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Button size="lg" className="h-12 gap-2 rounded-2xl px-6" asChild>
-                  <a href={getPathForRoute("login")} onClick={(event) => handleNavigate(event, "login")}>
-                    Open Dashboard
-                    <ArrowRight className="h-4 w-4" />
-                  </a>
-                </Button>
-                <Button variant="outline" size="lg" className="h-12 rounded-2xl px-6" asChild>
-                  <a href={getPathForRoute("signup")} onClick={(event) => handleNavigate(event, "signup")}>
-                    Create Account
-                  </a>
-                </Button>
-              </div>
-            </div>
-
-            <div className="rounded-[2rem] border border-border/70 bg-background/55 p-4 shadow-[0_22px_80px_rgba(0,0,0,0.18)] backdrop-blur-xl">
-              <div className="overflow-hidden rounded-[1.6rem] border border-border/60 bg-card/85">
-                <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
-                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                    <PanelsTopLeft className="h-4 w-4 text-muted-foreground" />
-                    Review workspace
-                  </div>
-                </div>
-
-                <div className="grid min-h-[34rem] gap-0 md:grid-cols-[0.92fr_1.08fr]">
-                  <div className="border-b border-border/60 p-4 md:border-b-0 md:border-r">
-                    <div className="h-full rounded-[1.4rem] border border-dashed border-border/70 bg-background/30" />
-                  </div>
-
-                  <div className="p-4">
-                    <div className="grid h-full gap-4 [grid-template-rows:1.2fr_1fr_auto]">
-                      <div className="rounded-[1.4rem] border border-dashed border-border/70 bg-background/30" />
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div className="rounded-[1.4rem] border border-dashed border-border/70 bg-background/30" />
-                        <div className="rounded-[1.4rem] border border-dashed border-border/70 bg-background/30" />
-                      </div>
-                      <div className="rounded-[1.4rem] border border-dashed border-border/70 bg-background/30" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className="grid gap-4 pb-14 md:grid-cols-3">
-            {workflowCards.map((card) => (
-              <article key={card.title} className="rounded-[1.75rem] border border-border/70 bg-card/65 p-6 backdrop-blur-sm">
-                <h2 className="text-xl font-semibold text-foreground">{card.title}</h2>
-                <p className="mt-3 text-sm leading-7 text-muted-foreground">{card.copy}</p>
-              </article>
-            ))}
-          </section>
-
-          <footer className="border-t border-border/70 pb-10 pt-8">
-            <div className="grid gap-8 md:grid-cols-[1.2fr_repeat(3,minmax(0,1fr))]">
-              <div className="max-w-sm">
-                <div className="text-2xl font-semibold tracking-[-0.04em] text-foreground">Tribunal</div>
-                <p className="mt-3 text-sm leading-7 text-muted-foreground">
-                  An inbox-first phishing review workflow for teams who want clearer judgment, cleaner reports, and less noise.
-                </p>
-              </div>
-
-              {footerColumns.map((column) => (
-                <div key={column.title}>
-                  <div className="text-sm font-medium text-foreground">{column.title}</div>
-                  <div className="mt-4 space-y-3 text-sm text-muted-foreground">
-                    {column.links.map((link) => (
-                      <div key={link}>{link}</div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </footer>
-        </div>
+            </GlowCard>
+          </div>
+        </footer>
       </div>
     </main>
   )
