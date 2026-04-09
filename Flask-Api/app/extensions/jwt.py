@@ -6,6 +6,7 @@ def generate_access_token(user):
     payload = {
         "uid": user["uid"],
         "email": user.get("email"),
+        "role":user.get("role", "user"),
         "type": "access",
         "exp": datetime.now(timezone.utc) + timedelta(minutes=15)
     }

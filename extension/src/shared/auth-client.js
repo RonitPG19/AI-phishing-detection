@@ -101,7 +101,7 @@ export async function loginWithFirebaseAndFlask({ email, password }) {
 }
 
 async function exchangeFirebaseTokenForSession({ firebaseIdToken, fallbackEmail, fallbackProvider }) {
-  const authData = await requestFlask('/api/auth/firebase-login', {
+  const authData = await requestFlask('/api/auth/login', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${firebaseIdToken}`
@@ -132,16 +132,33 @@ async function exchangeFirebaseTokenForSession({ firebaseIdToken, fallbackEmail,
 }
 
 export async function loginWithGoogleAndFlask() {
-  const auth = getFirebaseAuth();
+window.googleLogin = async () => {
   const provider = new GoogleAuthProvider();
-  const credentials = await signInWithPopup(auth, provider);
-  const firebaseIdToken = await credentials.user.getIdToken();
 
-  return exchangeFirebaseTokenForSession({
-    firebaseIdToken,
-    fallbackEmail: credentials.user.email || '',
-    fallbackProvider: 'google'
-  });
+  try {
+    const result = await signInWithPopup(auth, provider);
+
+    const token = await result.user.getIdToken();
+
+    // Send token to Flask
+    const res = await fetch("/api/auth/firebase-login", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + token,
+      },
+    });
+
+    const data = await res.json();
+
+    // Store JWT
+    localStorage.setItem("access", data.access);
+
+    output.innerText = JSON.stringify(data, null, 2);
+
+  } catch (e) {
+    output.innerText = e.message;
+  }
+};
 }
 
 export async function sendFirebasePasswordReset(email) {
