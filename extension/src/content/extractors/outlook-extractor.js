@@ -24,6 +24,10 @@ function findEmail(value = '') {
   return value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || '';
 }
 
+function extractAllEmails(value = '') {
+  return [...new Set((String(value || '').match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || []).map((email) => email.trim()))];
+}
+
 function getReadableText(element) {
   if (!element) {
     return '';
@@ -247,6 +251,33 @@ function parseAddressesFromLabel(value = '') {
     .filter(Boolean);
 }
 
+function uniqueValues(values = []) {
+  return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))];
+}
+
+function getNodeCandidateValues(node) {
+  if (!node) {
+    return [];
+  }
+
+  const attributeValues = [...node.attributes]
+    .map((attribute) => attribute?.value || '')
+    .filter(Boolean);
+
+  const dataValues = Object.values(node.dataset || {}).filter(Boolean);
+
+  return uniqueValues([
+    getText(node),
+    node.innerText || '',
+    node.getAttribute('title') || '',
+    node.getAttribute('aria-label') || '',
+    node.getAttribute('href') || '',
+    node.getAttribute('email') || '',
+    ...attributeValues,
+    ...dataValues
+  ]);
+}
+
 function extractAddresses(root, labelPrefix) {
   const prefixPattern = new RegExp(`^${labelPrefix}:?\\s*`, 'i');
 
@@ -267,7 +298,7 @@ function getHeaderRegion(messageRoot, bodyNode) {
 
   const bodyTop = bodyNode?.getBoundingClientRect?.().top ?? Number.POSITIVE_INFINITY;
 
-  return Array.from(messageRoot.querySelectorAll('[title], [aria-label], a[href^="mailto:"]'))
+  return Array.from(messageRoot.querySelectorAll('[title], [aria-label], [email], a[href^="mailto:"], button, span, div'))
     .filter(isVisible)
     .filter((node) => node.getBoundingClientRect().top < bodyTop);
 }
@@ -275,22 +306,61 @@ function getHeaderRegion(messageRoot, bodyNode) {
 function extractHeaderEmails(messageRoot, bodyNode) {
   const values = getHeaderRegion(messageRoot, bodyNode)
     .flatMap((node) => {
-      if (node.matches('a[href^="mailto:"]')) {
-        return [node.href.replace(/^mailto:/i, '').split('?')[0].trim()];
-      }
-
-      return [
-        node.getAttribute('title') || '',
-        node.getAttribute('aria-label') || '',
-        getText(node)
-      ].map((value) => findEmail(value)).filter(Boolean);
+      return getNodeCandidateValues(node).flatMap((value) => extractAllEmails(value));
     });
 
-  return [...new Set(values)];
+  return uniqueValues(values);
+}
+
+function extractSenderCandidates(root, bodyNode) {
+  const labeledCandidates = extractAddresses(root, 'From');
+  const headerEmails = extractHeaderEmails(root, bodyNode);
+  const mailtoCandidates = extractAddressesFromMailto(root);
+
+  const headerValueCandidates = getHeaderRegion(root, bodyNode)
+    .flatMap((node) => getNodeCandidateValues(node))
+    .filter((value) => /from|sender|reply-to/i.test(value) || Boolean(findEmail(value)))
+    .filter((value) => String(value || '').length <= 180);
+
+  return uniqueValues([
+    ...labeledCandidates,
+    ...headerValueCandidates,
+    ...headerEmails,
+    ...mailtoCandidates
+  ]);
+}
+
+function buildMinimalFromHeaders(fromCandidates = [], from) {
+  const senderEmail = findEmail(from);
+  const cleanCandidates = uniqueValues(
+    fromCandidates
+      .map((value) => String(value || '').replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .filter((value) => value.length <= 180)
+      .filter((value) => {
+        const lower = value.toLowerCase();
+        return !lower.includes('reply all') &&
+          !lower.includes('forward') &&
+          !lower.includes('summarize') &&
+          !lower.startsWith('to:') &&
+          !lower.startsWith('cc:');
+      })
+  );
+
+  const prioritized = cleanCandidates.filter((value) => {
+    const lower = value.toLowerCase();
+    return lower.startsWith('from:') || Boolean(findEmail(value));
+  });
+
+  if (senderEmail && !prioritized.some((value) => findEmail(value)?.toLowerCase() === senderEmail.toLowerCase())) {
+    prioritized.push(senderEmail);
+  }
+
+  return prioritized.length ? { From: prioritized } : {};
 }
 
 function extractFromAddress(root, bodyNode) {
-  const candidates = extractAddresses(root, 'From');
+  const candidates = extractSenderCandidates(root, bodyNode);
   const labeledEmail = candidates.map((value) => findEmail(value)).find(Boolean);
   if (labeledEmail) {
     return labeledEmail;
@@ -409,17 +479,19 @@ export function extractOutlookEmailDetails(root = document) {
 
   const links = extractVisibleOutlookLinks(bodyNode);
   const attachments = extractAttachments(messageRoot);
+  const fromCandidates = extractSenderCandidates(messageRoot, bodyNode);
 
   return {
     subject,
     from,
+    fromCandidates,
     to,
     cc,
     bodyText,
     bodyHtml: sanitizeHtmlNode(bodyNode),
     links,
     attachments,
-    headers: {},
+    headers: buildMinimalFromHeaders(fromCandidates, from),
     metadata: {
       url: window.location.href,
       linkCount: links.length,
