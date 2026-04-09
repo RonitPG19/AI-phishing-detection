@@ -88,9 +88,6 @@ public class FirestoreReportService {
         document.put("sender", report.sender());
         document.put("urlCount", report.urlCount());
         document.put("overallRiskScore", report.overallRiskScore());
-        if (report.scoreBreakdown() != null) {
-            document.put("scoreBreakdown", report.scoreBreakdown());
-        }
         document.put("headerInspectionResult", Map.of(
             "spfFail", report.headerInspectionResult().spfFail,
             "dkimFail", report.headerInspectionResult().dkimFail,
@@ -98,7 +95,15 @@ public class FirestoreReportService {
             "displayNameMismatch", report.headerInspectionResult().displayNameMismatch,
             "replyToMismatch", report.headerInspectionResult().replyToMismatch
         ));
-        document.put("findings", mapFindings(report.findings()));
+        
+        if (report.sections() != null) {
+            Map<String, Object> sectionsMap = new LinkedHashMap<>();
+            sectionsMap.put("Header", mapCategory(report.sections().header()));
+            sectionsMap.put("Subject", mapCategory(report.sections().subject()));
+            sectionsMap.put("Body", mapCategory(report.sections().body()));
+            sectionsMap.put("Links", mapCategory(report.sections().links()));
+            document.put("sections", sectionsMap);
+        }
 
         // Persist AI analysis if available
         if (report.aiAnalysis() != null) {
@@ -183,5 +188,12 @@ public class FirestoreReportService {
                 return mapped;
             })
             .toList();
+    }
+
+    private Map<String, Object> mapCategory(PhishingScannerService.CategoryResult category) {
+        Map<String, Object> mapped = new LinkedHashMap<>();
+        mapped.put("findings", mapFindings(category.findings()));
+        mapped.put("scoreBreakdown", category.scoreBreakdown());
+        return mapped;
     }
 }

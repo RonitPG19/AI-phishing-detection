@@ -20,6 +20,7 @@ extension/dist-firefox/
 venv/
 env/
 .venv/
+Flask-Api/flaskapi/
 
 # --------------------
 # Node

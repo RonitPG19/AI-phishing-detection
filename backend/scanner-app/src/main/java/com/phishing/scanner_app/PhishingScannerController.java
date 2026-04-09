@@ -33,10 +33,9 @@ public class PhishingScannerController {
             report.subject(),
             report.sender(),
             report.urlCount(),
-            report.findings(),
+            report.sections(),
             report.headerInspectionResult(),
             report.overallRiskScore(),
-            report.scoreBreakdown(),
             reportId,
             report.aiAnalysis()
         );

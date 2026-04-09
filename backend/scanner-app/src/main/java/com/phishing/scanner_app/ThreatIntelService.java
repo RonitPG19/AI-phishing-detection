@@ -250,7 +250,7 @@ public class ThreatIntelService {
     }
 
     private Instant readLastUpdatedTimestamp() {
-        if (metadataPath == null || !Files.exists(metadataPath)) {
+        if (metadataPath == null || blacklistCsvPath==null || !Files.exists(metadataPath) || !Files.exists(blacklistCsvPath)) {
             return null;
         }
 

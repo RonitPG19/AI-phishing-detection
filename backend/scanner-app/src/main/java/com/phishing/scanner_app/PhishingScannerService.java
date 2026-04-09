@@ -172,7 +172,10 @@ public class PhishingScannerService {
         String senderRootDomain = extractRootDomain(extractFromDomain(sender));
         boolean senderWhitelisted = whitelistManager.isWhitelistedDomain(senderRootDomain);
         RiskScoreResult riskScoreResult = calculateRiskScore(findings, headerInspectionResult, senderWhitelisted);
-        return new EmailScanReport(subject, sender, allUrls.size(), findings, headerInspectionResult, riskScoreResult.overallScore(), riskScoreResult.scoreBreakdown(), null, aiAnalysis);
+        
+        CategorizedFindings categorized = categorizeResults(findings, riskScoreResult.scoreBreakdown());
+        
+        return new EmailScanReport(subject, sender, allUrls.size(), categorized, headerInspectionResult, riskScoreResult.overallScore(), null, aiAnalysis);
     }
 
     private static Severity parseAiSeverity(String severity) {
@@ -1063,14 +1066,76 @@ public class PhishingScannerService {
         }
     }
 
+    public static final class CategoryResult {
+        private final List<RiskFinding> findings = new ArrayList<>();
+        private final Map<String, Integer> scoreBreakdown = new LinkedHashMap<>();
+
+        @JsonProperty("findings")
+        public List<RiskFinding> findings() { return findings; }
+        @JsonProperty("scoreBreakdown")
+        public Map<String, Integer> scoreBreakdown() { return scoreBreakdown; }
+    }
+
+    public static final class CategorizedFindings {
+        private final CategoryResult header = new CategoryResult();
+        private final CategoryResult subject = new CategoryResult();
+        private final CategoryResult body = new CategoryResult();
+        private final CategoryResult links = new CategoryResult();
+
+        @JsonProperty("Header")
+        public CategoryResult header() { return header; }
+        @JsonProperty("Subject")
+        public CategoryResult subject() { return subject; }
+        @JsonProperty("Body")
+        public CategoryResult body() { return body; }
+        @JsonProperty("Links")
+        public CategoryResult links() { return links; }
+    }
+
+    private static CategorizedFindings categorizeResults(List<RiskFinding> findings, Map<String, Integer> scoreBreakdown) {
+        CategorizedFindings cats = new CategorizedFindings();
+
+        for (RiskFinding f : findings) {
+            String desc = f.description().toLowerCase();
+            String target = f.target().toLowerCase();
+            if (desc.contains("spf") || desc.contains("dkim") || desc.contains("dmarc") || 
+                desc.contains("return-path") || desc.contains("reply-to") || desc.contains("display name") || 
+                desc.contains("sender") || target.equals("spf") || target.equals("dkim") || target.equals("dmarc")) {
+                cats.header().findings().add(f);
+            } else if (target.contains("[ai]")) {
+                if (desc.contains("subject") || target.contains("subject")) {
+                    cats.subject().findings().add(f);
+                } else {
+                    cats.body().findings().add(f);
+                }
+            } else if (desc.contains("subject") || target.contains("subject")) {
+                cats.subject().findings().add(f);
+            } else {
+                cats.links().findings().add(f);
+            }
+        }
+
+        for (Map.Entry<String, Integer> e : scoreBreakdown.entrySet()) {
+            String k = e.getKey();
+            if (k.equals("auth") || k.equals("social") || k.equals("whitelist")) {
+                cats.header().scoreBreakdown().put(k, e.getValue());
+            } else if (k.equals("ai")) {
+                cats.body().scoreBreakdown().put(k, e.getValue());
+            } else {
+                cats.links().scoreBreakdown().put(k, e.getValue());
+            }
+        }
+
+        return cats;
+    }
+
     public record EmailScanReport(
         String subject,
         String sender,
         int urlCount,
-        List<RiskFinding> findings,
+        CategorizedFindings sections,
         HeaderInspectionResult headerInspectionResult,
         int overallRiskScore,
-        Map<String, Integer> scoreBreakdown,
         String reportId,
         GeminiEmailAnalyzer.GeminiAnalysisResult aiAnalysis
     ) {
