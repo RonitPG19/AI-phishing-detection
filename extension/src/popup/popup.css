@@ -576,7 +576,7 @@ body {
 }
 
 .section-body.open {
-    max-height: 800px;
+    max-height: 9999px;
     opacity: 1;
     padding: var(--space-3) var(--space-4) var(--space-4);
 }
@@ -635,7 +635,7 @@ body {
 }
 
 .issue-card-detail.open {
-    max-height: 400px;
+    max-height: 2000px;
     opacity: 1;
 }
 
