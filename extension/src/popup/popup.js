@@ -280,7 +280,7 @@ function renderAuthPage() {
 
         ${authFormMode === 'login' ? `
           <div class="auth-divider"><span>or</span></div>
-          <button class="btn-secondary auth-action-btn auth-google-btn" id="auth-google-btn" type="button" disabled aria-disabled="true">
+          <button class="btn-secondary auth-action-btn auth-google-btn" id="auth-google-btn" type="button" aria-disabled="true">
             <i data-icon="google"></i>
             Sign in with Google
           </button>

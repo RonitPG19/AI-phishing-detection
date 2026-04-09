@@ -101,7 +101,7 @@ export async function loginWithFirebaseAndFlask({ email, password }) {
 }
 
 async function exchangeFirebaseTokenForSession({ firebaseIdToken, fallbackEmail, fallbackProvider }) {
-  const authData = await requestFlask('/api/auth/firebase-login', {
+  const authData = await requestFlask('/api/auth/login', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${firebaseIdToken}`

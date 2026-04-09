@@ -114,3 +114,6 @@ serviceAccountKey.json
 # Keep web app config
 !web/**/*.json
 !web/package-lock.json
+
+# Password hashing File for the admin registration
+passGen.py
