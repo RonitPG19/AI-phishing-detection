@@ -7,3 +7,14 @@ firebase.firestore.collection=phishingReports
 firebase.firestore.timeout.seconds=30
 gemini.api.key=
 gemini.timeout.ms=30000
+
+scanner.whitelist.sources=classpath:top-1m-Tranco.csv,classpath:top-1m-umbrella.csv
+scanner.whitelist.max-candidates=200
+scanner.whitelist.max-domains=100
+
+threat-intel.data-directory=data/threat-intel
+threat-intel.openphish-url=https://openphish.com/feed.txt
+threat-intel.phishtank-url=http://data.phishtank.com/data/online-valid.csv
+threat-intel.urlhaus-url=threat-intel.urlhaus-url=https://urlhaus-api.abuse.ch/v2/files/exports/YOUR_AUTH_KEY_HERE/recent_urls.txt
+threat-intel.max-age-hours=24
+threat-intel.refresh-check-ms=3600000

@@ -69,15 +69,22 @@ public class PhishingScannerService {
     private static final Map<String, Integer> DOMAIN_AGE_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
 
     private final Set<String> trustedDomains;
-    private final Set<String> openPhishFeed;
     private final RedirectChainResolver redirectChainResolver;
     private final GeminiEmailAnalyzer geminiEmailAnalyzer;
+    private final ThreatIntelService threatIntelService;
+    private final WhitelistManager whitelistManager;
 
-    public PhishingScannerService(RedirectChainResolver redirectChainResolver, GeminiEmailAnalyzer geminiEmailAnalyzer) {
+    public PhishingScannerService(
+        RedirectChainResolver redirectChainResolver,
+        GeminiEmailAnalyzer geminiEmailAnalyzer,
+        ThreatIntelService threatIntelService,
+        WhitelistManager whitelistManager
+    ) {
         this.redirectChainResolver = redirectChainResolver;
         this.geminiEmailAnalyzer = geminiEmailAnalyzer;
+        this.threatIntelService = threatIntelService;
+        this.whitelistManager = whitelistManager;
         this.trustedDomains = loadTrustedDomains();
-        this.openPhishFeed = loadOpenPhishFeed();
     }
 
     public EmailScanReport scanEmail(EmailRequest request, String safeBrowsingApiKey) {
@@ -128,18 +135,17 @@ public class PhishingScannerService {
             }
         }
 
-        // Use the expanded URL set (original + resolved) for all downstream checks
         Set<String> allUrls = resolvedUrls;
 
         HeaderInspectionResult headerInspectionResult = inspectAuthenticationHeaders(request, findings);
         headerInspectionResult.displayNameMismatch = detectDisplayNameMismatch(request, findings);
         headerInspectionResult.replyToMismatch = detectReplyToMismatch(request, findings);
 
-        checkOpenPhish(allUrls, openPhishFeed, findings);
+        checkThreatIntelBlacklist(allUrls, findings);
         checkGoogleSafeBrowsing(allUrls, safeBrowsingApiKey, findings);
 
         Map<String, String> urlDomainMap = buildUrlDomainMap(allUrls);
-        inspectHomographDomains(urlDomainMap, findings);
+        inspectHomographDomains(urlDomainMap, trustedDomains, findings);
 
         Map<String, Integer> domainAgeByRootDomain = inspectDomainAges(urlDomainMap.values(), findings);
         inspectTyposquatting(urlDomainMap.values(), trustedDomains, findings);
@@ -163,8 +169,10 @@ public class PhishingScannerService {
             }
         }
 
-        int overallRiskScore = calculateRiskScore(findings, headerInspectionResult);
-        return new EmailScanReport(subject, sender, allUrls.size(), findings, headerInspectionResult, overallRiskScore, null, aiAnalysis);
+        String senderRootDomain = extractRootDomain(extractFromDomain(sender));
+        boolean senderWhitelisted = whitelistManager.isWhitelistedDomain(senderRootDomain);
+        RiskScoreResult riskScoreResult = calculateRiskScore(findings, headerInspectionResult, senderWhitelisted);
+        return new EmailScanReport(subject, sender, allUrls.size(), findings, headerInspectionResult, riskScoreResult.overallScore(), riskScoreResult.scoreBreakdown(), null, aiAnalysis);
     }
 
     private static Severity parseAiSeverity(String severity) {
@@ -206,11 +214,10 @@ public class PhishingScannerService {
         }
         return urls;
     }
-    private static void checkOpenPhish(Set<String> urls, Set<String> openPhishFeed, List<RiskFinding> findings) {
+    private void checkThreatIntelBlacklist(Set<String> urls, List<RiskFinding> findings) {
         for (String url : urls) {
-            String normalized = normalizeUrl(url);
-            if (openPhishFeed.contains(normalized)) {
-                findings.add(new RiskFinding(url, "URL found in OpenPhish feed", Severity.HIGH));
+            if (threatIntelService.isBlacklisted(url)) {
+                findings.add(new RiskFinding(url, "URL found in threat intelligence blacklist", Severity.HIGH));
             }
         }
     }
@@ -294,7 +301,66 @@ public class PhishingScannerService {
                 }
             }
         }
+        List<String> returnPathHeaders = request.getHeaders().get("Return-Path");
+        if (returnPathHeaders != null && !returnPathHeaders.isEmpty()) {
+            String returnPath = returnPathHeaders.getFirst();
+            returnPath = returnPath.replaceAll("[<>]", "").trim();
+            String returnPathDomain = extractDomainFromAddresses(returnPath);
+            String fromDomain = extractFromDomain(request.getFrom());
+
+            String rootReturnPath = extractRootDomain(returnPathDomain);
+            String rootFrom = extractRootDomain(fromDomain);
+
+            if (!isBlank(rootReturnPath) && !rootReturnPath.equals(rootFrom)) {
+                result.returnPathMismatch = true;
+                findings.add(new RiskFinding(
+                        returnPath,
+                        "Return-Path domain (" + rootReturnPath + ") differs from From domain (" + rootFrom + ")",
+                        Severity.MEDIUM
+                ));
+            }
+        }
         return result;
+    }
+
+    private static final Map<Character, Character> HOMOGLYPH_MAP = Map.ofEntries(
+            Map.entry('0', 'o'),
+            Map.entry('1', 'l'),
+            Map.entry('5', 's'),
+            Map.entry('8', 'b'),
+            Map.entry('6', 'g'),
+            Map.entry('3', 'e'),
+            Map.entry('4', 'a'),
+            Map.entry('7', 't'),
+            Map.entry('$', 's'),
+            Map.entry('@', 'a'),
+            Map.entry('!', 'i'),
+            Map.entry('|', 'l'),
+            Map.entry('ʼ', '\'')
+    );
+
+    private static String toHomoglyphSkeleton(String domain) {
+        if (isBlank(domain)) return domain;
+        StringBuilder sb = new StringBuilder(domain.length());
+        for (char c : domain.toLowerCase().toCharArray()) {
+            sb.append(HOMOGLYPH_MAP.getOrDefault(c, c));
+        }
+        return sb.toString();
+    }
+
+    private static String findHomoglyphTarget(String domain, Set<String> trustedDomains) {
+        String skeleton = toHomoglyphSkeleton(domain);
+        if (!skeleton.equals(domain) && trustedDomains.contains(skeleton)) {
+            return skeleton;
+        }
+        for (Map.Entry<String, Set<String>> entry : BRAND_DOMAIN_MAP.entrySet()) {
+            for (String brandDomain : entry.getValue()) {
+                if (skeleton.equals(brandDomain) && !domain.equals(brandDomain)) {
+                    return brandDomain;
+                }
+            }
+        }
+        return null;
     }
 
     private static boolean detectDisplayNameMismatch(EmailRequest request, List<RiskFinding> findings) {
@@ -306,7 +372,7 @@ public class PhishingScannerService {
         String senderDomain = extractFromDomain(from);
         for (String keyword : BRAND_DOMAIN_MAP.keySet()) {
             if (displayName.toLowerCase().contains(keyword.toLowerCase())) {
-                if (!matchesBrandDomain(extractRootDomain(senderDomain), BRAND_DOMAIN_MAP.get(keyword), keyword)) {
+                if (!matchesBrandDomain(extractRootDomain(senderDomain), BRAND_DOMAIN_MAP.get(keyword))) {
                     findings.add(new RiskFinding(displayName, "Display name contains brand '" + keyword + "' but sender domain does not match", Severity.MEDIUM));
                     return true;
                 }
@@ -329,12 +395,35 @@ public class PhishingScannerService {
         return false;
     }
 
-    private static void inspectHomographDomains(Map<String, String> urlDomainMap, List<RiskFinding> findings) {
+    // Change method signature:
+    private static void inspectHomographDomains(
+            Map<String, String> urlDomainMap,
+            Set<String> trustedDomains,   // ← ADD
+            List<RiskFinding> findings) {
+
         for (Map.Entry<String, String> entry : urlDomainMap.entrySet()) {
             String url = entry.getKey();
             String domain = entry.getValue();
+
+            // IDN/Unicode check (existing)
             if (containsNonAscii(domain)) {
-                findings.add(new RiskFinding(url, "Domain contains non-ASCII characters (potential homograph attack)", Severity.HIGH));
+                findings.add(new RiskFinding(
+                        url,
+                        "Domain contains non-ASCII characters (potential homograph/IDN attack)",
+                        Severity.HIGH
+                ));
+            }
+
+            // Digit-letter substitution check (new)
+            String rootDomain = extractRootDomain(domain);
+            String impersonatedDomain = findHomoglyphTarget(rootDomain, trustedDomains);
+            if (impersonatedDomain != null) {
+                findings.add(new RiskFinding(
+                        url,
+                        "Domain '" + rootDomain + "' appears to impersonate '" + impersonatedDomain
+                                + "' using character substitution (e.g. 0→o, 1→l)",
+                        Severity.HIGH
+                ));
             }
         }
     }
@@ -541,41 +630,147 @@ public class PhishingScannerService {
         }
     }
 
-    private static Set<String> loadOpenPhishFeed() {
-        Set<String> feed = new LinkedHashSet<>();
-        try {
-            URI uri = URI.create("https://openphish.com/feed.txt");
-            URL url = uri.toURL();
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("GET");
-            connection.setConnectTimeout(NETWORK_TIMEOUT_MS);
-            connection.setReadTimeout(NETWORK_TIMEOUT_MS);
-            int responseCode = connection.getResponseCode();
-            if (responseCode == 200) {
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        String normalized = normalizeUrl(line.trim());
-                        if (!normalized.isEmpty()) {
-                            feed.add(normalized);
-                        }
-                    }
-                }
-            } else {
-                logWarning("OpenPhish feed returned " + responseCode, null);
-            }
-        } catch (Exception exception) {
-            logWarning("Failed to load OpenPhish feed", exception);
-        }
-        return feed;
-    }
+    public record RiskScoreResult(
+        int overallScore,
+        Map<String, Integer> scoreBreakdown
+    ) {}
 
-    private static int calculateRiskScore(List<RiskFinding> findings, HeaderInspectionResult headerInspectionResult) {
-        int score = findings.stream().mapToInt(RiskFinding::scoreContribution).sum();
-        if (headerInspectionResult.spfFail && headerInspectionResult.dkimFail && headerInspectionResult.dmarcFail) {
-            score += 20; // Triple fail bonus
+    private static RiskScoreResult calculateRiskScore(
+            List<RiskFinding> findings,
+            HeaderInspectionResult header,
+            boolean senderWhitelisted
+    ) {
+
+        int blacklistScore = 0;
+        int threatScore = 0;
+        int domainScore = 0;
+        int sslScore = 0;
+        int authScore = 0;
+        int socialScore = 0;
+        int urlScore = 0;
+        int aiScore = 0;
+        int whitelistScore = 0;
+
+        boolean hasBlacklist = false;
+        boolean hasThreatIntel = false;
+
+        // ── Process findings ──
+        for (RiskFinding f : findings) {
+            String desc = f.description().toLowerCase();
+            int score = f.scoreContribution();
+
+            // BLACKLIST
+            if (desc.contains("blacklisted") || desc.contains("blacklist")) {
+                blacklistScore += score;
+                hasBlacklist = true;
+                continue;
+            }
+
+            // Threat Intel
+            if (desc.contains("safe browsing")) {
+                threatScore += score;
+                hasThreatIntel = true;
+                continue;
+            }
+
+            // Domain
+            if (desc.contains("domain is only") ||
+                    desc.contains("typosquatting") ||
+                    desc.contains("homograph")) {
+                domainScore += score;
+                continue;
+            }
+
+            // SSL
+            if (desc.contains("ssl") ||
+                    desc.contains("certificate") ||
+                    desc.contains("does not resolve")) {
+                sslScore += score;
+                continue;
+            }
+
+            // Auth
+            if (desc.contains("spf") ||
+                    desc.contains("dkim") ||
+                    desc.contains("dmarc")) {
+                authScore += score;
+                continue;
+            }
+
+            // Social
+            if (desc.contains("display name") ||
+                    desc.contains("reply-to")) {
+                socialScore += score;
+                continue;
+            }
+
+            // URL behavior
+            if (desc.contains("redirect") ||
+                    desc.contains("shortener")) {
+                urlScore += score;
+                continue;
+            }
+
+            // AI
+            if (desc.contains("[ai]")) {
+                aiScore += score;
+            }
         }
-        return Math.min(score, 100);
+
+        // ── Header bonus ──
+        if (header.spfFail && header.dkimFail && header.dmarcFail) {
+            authScore += 5;
+        }
+
+        // ── Whitelist logic ──
+        if (senderWhitelisted) {
+            whitelistScore -= 15;
+        }
+
+        // ── Apply caps ──
+        threatScore = Math.min(threatScore, 30);
+        domainScore = Math.min(domainScore, 20);
+        sslScore = Math.min(sslScore, 10);
+        authScore = Math.min(authScore, 15);
+        socialScore = Math.min(socialScore, 15);
+        urlScore = Math.min(urlScore, 5);
+        aiScore = Math.min(aiScore, 15);
+        whitelistScore = Math.max(whitelistScore, -20);
+
+        // ── Total ──
+        int total =
+                blacklistScore +
+                        threatScore +
+                        domainScore +
+                        sslScore +
+                        authScore +
+                        socialScore +
+                        urlScore +
+                        aiScore +
+                        whitelistScore;
+
+        Map<String, Integer> breakdown = new LinkedHashMap<>();
+        if (blacklistScore > 0) breakdown.put("blacklist", blacklistScore);
+        if (threatScore > 0) breakdown.put("threatIntel", threatScore);
+        if (domainScore > 0) breakdown.put("domainAge", domainScore);
+        if (sslScore > 0) breakdown.put("ssl", sslScore);
+        if (authScore > 0) breakdown.put("auth", authScore);
+        if (socialScore > 0) breakdown.put("social", socialScore);
+        if (urlScore > 0) breakdown.put("url", urlScore);
+        if (aiScore > 0) breakdown.put("ai", aiScore);
+        if (whitelistScore != 0) breakdown.put("whitelist", whitelistScore);
+
+        // ── HARD OVERRIDE ──
+        if (hasBlacklist && hasThreatIntel) {
+            breakdown.put("hardOverride", 100);
+            return new RiskScoreResult(100, breakdown);
+        }
+
+        // ── Normalize ──
+        total = Math.max(0, total);
+        total = Math.min(100, total);
+
+        return new RiskScoreResult(total, breakdown);
     }
 
     private static String extractFromDomain(String from) {
@@ -668,7 +863,7 @@ public class PhishingScannerService {
         return map;
     }
 
-    private static boolean matchesBrandDomain(String senderRootDomain, Set<String> allowedDomains, String keyword) {
+    private static boolean matchesBrandDomain(String senderRootDomain, Set<String> allowedDomains) {
         for (String allowed : allowedDomains) {
             if (senderRootDomain.equalsIgnoreCase(allowed) || senderRootDomain.endsWith("." + allowed)) {
                 return true;
@@ -840,6 +1035,7 @@ public class PhishingScannerService {
         public boolean dmarcFail;
         public boolean displayNameMismatch;
         public boolean replyToMismatch;
+        public boolean returnPathMismatch;
     }
 
     public static final class EmailContent {
@@ -874,6 +1070,7 @@ public class PhishingScannerService {
         List<RiskFinding> findings,
         HeaderInspectionResult headerInspectionResult,
         int overallRiskScore,
+        Map<String, Integer> scoreBreakdown,
         String reportId,
         GeminiEmailAnalyzer.GeminiAnalysisResult aiAnalysis
     ) {

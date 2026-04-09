@@ -60,7 +60,7 @@ public class FirestoreReportService {
         for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             try {
                 Map<String, Object> document = buildDocument(request, report);
-                DocumentReference ref = firestore.collection(collectionName).add(document).get();
+                DocumentReference ref = firestore.collection(java.util.Objects.requireNonNull(collectionName)).add(document).get();
                 LOGGER.debug("Successfully saved phishing report to Firestore: {}", ref.getId());
                 return ref.getId();
             } catch (Exception exception) {
@@ -88,6 +88,9 @@ public class FirestoreReportService {
         document.put("sender", report.sender());
         document.put("urlCount", report.urlCount());
         document.put("overallRiskScore", report.overallRiskScore());
+        if (report.scoreBreakdown() != null) {
+            document.put("scoreBreakdown", report.scoreBreakdown());
+        }
         document.put("headerInspectionResult", Map.of(
             "spfFail", report.headerInspectionResult().spfFail,
             "dkimFail", report.headerInspectionResult().dkimFail,
@@ -124,7 +127,7 @@ public class FirestoreReportService {
         }
 
         try {
-            DocumentSnapshot snapshot = firestore.collection(collectionName).document(id).get().get();
+            DocumentSnapshot snapshot = firestore.collection(java.util.Objects.requireNonNull(collectionName)).document(id).get().get();
             if (!snapshot.exists()) {
                 return null;
             }
@@ -148,7 +151,7 @@ public class FirestoreReportService {
         }
 
         try {
-            List<QueryDocumentSnapshot> documents = firestore.collection(collectionName)
+            List<QueryDocumentSnapshot> documents = firestore.collection(java.util.Objects.requireNonNull(collectionName))
                 .orderBy("savedAt", Query.Direction.DESCENDING)
                 .limit(limit)
                 .get()
