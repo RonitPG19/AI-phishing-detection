@@ -60,6 +60,8 @@ let currentPage = 'scan';
 let scanResults = null;
 let scanError = '';
 let isScanning = false;
+let scanStageIndex = 0;
+let scanStageVersion = 0;
 let historyDetailIndex = null;
 let toastTimeout = null;
 let authSession = null;
@@ -73,6 +75,27 @@ let authDraft = {
   password: '',
   confirmPassword: ''
 };
+
+const SCAN_STAGES = ['Extracting', 'Sending', 'Analyzing', 'Finalizing'];
+
+function setScanStage(index) {
+  scanStageIndex = Math.max(0, Math.min(index, SCAN_STAGES.length - 1));
+  if (currentPage === 'scan') {
+    renderScanPage();
+  }
+}
+
+async function advanceScanStage(index, minimumDelayMs = 0, version = scanStageVersion) {
+  if (!isScanning || version !== scanStageVersion) {
+    return;
+  }
+
+  setScanStage(index);
+
+  if (minimumDelayMs > 0) {
+    await new Promise((resolve) => window.setTimeout(resolve, minimumDelayMs));
+  }
+}
 
 function injectIcons(container = document) {
   container.querySelectorAll('[data-icon]').forEach((element) => {
@@ -397,7 +420,8 @@ function renderScanPage() {
   }
 
   if (isScanning) {
-    container.innerHTML = `<div class="scan-loading page-enter"><div class="spinner" aria-label="Scanning"></div><p class="scan-loading-text">Analyzing current email...</p></div>`;
+    const stage = SCAN_STAGES[Math.min(scanStageIndex, SCAN_STAGES.length - 1)] || 'Analyzing';
+    container.innerHTML = `<div class="scan-loading page-enter"><div class="spinner" aria-label="Scanning"></div><p class="scan-loading-text">${escapeHtml(stage)} current email...</p></div>`;
     return;
   }
 
@@ -527,6 +551,8 @@ async function requestActiveScan() {
     throw new Error('Open Gmail or Outlook in the active tab, then run the scan again.');
   }
 
+  await advanceScanStage(1, 200);
+
   return new Promise((resolve, reject) => {
     chrome.tabs.sendMessage(tab.id, { type: RUNTIME_MESSAGES.REQUEST_ACTIVE_SCAN }, (response) => {
       if (chrome.runtime.lastError) {
@@ -558,17 +584,25 @@ async function startScan() {
   }
 
   isScanning = true;
+  scanStageVersion += 1;
+  const currentScanVersion = scanStageVersion;
+  setScanStage(0);
   scanResults = null;
   scanError = '';
   renderScanPage();
 
   try {
+    await advanceScanStage(0, 250, currentScanVersion);
     const result = await requestActiveScan();
+    await advanceScanStage(2, 350, currentScanVersion);
+    await advanceScanStage(3, 250, currentScanVersion);
     scanResults = result;
   } catch (error) {
     scanError = error.message || 'Unable to scan the current message.';
   } finally {
     isScanning = false;
+    scanStageVersion += 1;
+    scanStageIndex = 0;
     renderScanPage();
   }
 }
