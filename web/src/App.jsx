@@ -45,12 +45,12 @@ function isProtectedRoute(route) {
 export default function App() {
   const [route, setRoute] = useState(getCurrentRoute)
   const [authSession, setAuthSession] = useState(() => getStoredAuthSession())
-  const [theme] = useState("dark")
+  const [theme, setTheme] = useState("dark")
 
   useEffect(() => {
     const root = document.documentElement
-    root.classList.add("dark")
-  }, [])
+    root.classList.toggle("dark", theme === "dark")
+  }, [theme])
 
   useEffect(() => {
     if (!authSession?.accessToken && isProtectedRoute(route)) {

@@ -10,21 +10,21 @@ const NAV_ITEMS = [
     dropdown: {
       type: "mega",
       links: [
-        { title: "Email API", desc: "Reliable delivery for your apps", icon: Mail },
-        { title: "SMTP", desc: "Traditional mail infrastructure", icon: Terminal },
-        { title: "Inbound", desc: "Receive and process emails", icon: Globe },
-        { title: "Audiences", desc: "Manage your contact lists", icon: Shield },
-        { title: "Broadcasts", desc: "Scale your reach instantly", icon: Zap },
+        { title: "Inbox Scanning", desc: "Analyze Gmail and Outlook emails directly from the extension.", icon: Mail },
+        { title: "Sender Verification", desc: "Catch mismatches, spoofing signals, and suspicious sender patterns.", icon: Shield },
+        { title: "Link Analysis", desc: "Inspect URLs, redirects, and risky domains before users click.", icon: Globe },
+        { title: "Report Dashboard", desc: "Review findings, verdicts, and scan history in one place.", icon: Terminal },
+        { title: "Clear Verdicts", desc: "Turn messy email signals into short, actionable summaries.", icon: Zap },
       ],
       featured: [
         {
-          title: "Transactional Emails",
-          desc: "Engineered for speed and reliability.",
+          title: "Browser Extension",
+          desc: "Scan the email you are viewing without leaving your inbox.",
           bg: "bg-white/[0.03]",
         },
         {
-          title: "Marketing Emails",
-          desc: "Deliver beautifully crafted content.",
+          title: "Admin Review",
+          desc: "Inspect reports, users, and follow-up actions from the dashboard.",
           bg: "bg-white/[0.03]",
         }
       ]
@@ -32,10 +32,11 @@ const NAV_ITEMS = [
   }
 ]
 
-export function PublicNavbar({ onNavigate }) {
+export function PublicNavbar({ onNavigate, theme = "dark" }) {
   const [activeItem, setActiveItem] = useState(null)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const containerRef = useRef(null)
+  const isDark = theme === "dark"
 
   const handleNavigate = (event, route) => {
     if (!onNavigate) return
@@ -56,12 +57,18 @@ export function PublicNavbar({ onNavigate }) {
 
   return (
     <div className="relative z-[100] flex justify-center w-full max-w-5xl mx-auto" ref={containerRef}>
-      <nav className="relative flex items-center justify-between md:justify-center w-full md:w-auto rounded-full border border-white/10 bg-black/30 shadow-[0_8px_32px_rgba(0,0,0,0.4),inset_0_1px_1px_rgba(255,255,255,0.1)] backdrop-blur-3xl px-2 py-1.5 ring-1 ring-white/[0.05]">
+      <nav className={`relative flex items-center justify-between md:justify-center w-full md:w-auto rounded-full px-2 py-1.5 backdrop-blur-3xl ${
+        isDark
+          ? "border border-white/10 bg-black/30 shadow-[0_8px_32px_rgba(0,0,0,0.4),inset_0_1px_1px_rgba(255,255,255,0.1)] ring-1 ring-white/[0.05]"
+          : "border border-stone-200/80 bg-white/85 shadow-[0_18px_50px_rgba(15,23,42,0.12),inset_0_1px_0_rgba(255,255,255,0.95)] ring-1 ring-stone-200/60"
+      }`}>
         <div className="flex items-center">
           <Button 
             variant="ghost" 
             size="sm" 
-            className="rounded-full px-4 text-sm font-bold text-white hover:bg-white/5 transition-colors"
+            className={`rounded-full px-4 text-sm font-bold transition-colors ${
+              isDark ? "text-white hover:bg-white/5" : "text-stone-900 hover:bg-stone-900/5"
+            }`}
             onClick={(e) => handleNavigate(e, "landing")}
           >
             Tribunal
@@ -75,7 +82,9 @@ export function PublicNavbar({ onNavigate }) {
                 onMouseLeave={() => setActiveItem(null)}
                 className="relative"
               >
-                <button className="flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-medium text-neutral-400 hover:text-white transition-colors">
+                <button className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-medium transition-colors ${
+                  isDark ? "text-neutral-400 hover:text-white" : "text-stone-500 hover:text-stone-900"
+                }`}>
                   {item.label}
                   {item.dropdown && <ChevronDown className={`h-3 w-3 transition-transform duration-300 ${activeItem === item ? "rotate-180" : ""}`} />}
                 </button>
@@ -89,41 +98,55 @@ export function PublicNavbar({ onNavigate }) {
                       transition={{ duration: 0.2, ease: "easeOut" }}
                       className="absolute left-1/2 -translate-x-1/2 top-full pt-4"
                     >
-                      <div className={`relative overflow-hidden rounded-[32px] border border-white/[0.08] bg-black/80 shadow-[0_32px_64px_-16px_rgba(0,0,0,1),inset_0_1px_1px_rgba(255,255,255,0.05)] backdrop-blur-[60px] backdrop-saturate-[180%] ring-1 ring-white/[0.05] ${item.dropdown.type === "mega" ? "w-[600px]" : "w-48"}`}>
-                        <div className="absolute inset-0 bg-[url('https://res.cloudinary.com/djpkwtowz/image/upload/v1715478440/noise_uvw6h0.png')] opacity-[0.05] mix-blend-overlay pointer-events-none" />
+                      <div className={`relative overflow-hidden rounded-[32px] backdrop-blur-[60px] backdrop-saturate-[180%] ${item.dropdown.type === "mega" ? "w-[600px]" : "w-48"} ${
+                        isDark
+                          ? "border border-white/[0.08] bg-black/80 shadow-[0_32px_64px_-16px_rgba(0,0,0,1),inset_0_1px_1px_rgba(255,255,255,0.05)] ring-1 ring-white/[0.05]"
+                          : "border border-stone-200/80 bg-white/95 shadow-[0_28px_70px_-24px_rgba(15,23,42,0.22),inset_0_1px_0_rgba(255,255,255,0.95)] ring-1 ring-stone-200/60"
+                      }`}>
+                        <div className={`absolute inset-0 pointer-events-none ${isDark ? "bg-[url('https://res.cloudinary.com/djpkwtowz/image/upload/v1715478440/noise_uvw6h0.png')] opacity-[0.05] mix-blend-overlay" : "bg-[radial-gradient(circle_at_bottom_right,rgba(59,130,246,0.05),transparent_35%)]"}`} />
                         
                         {item.dropdown.type === "mega" ? (
                           <div className="grid grid-cols-[1fr_240px] p-6">
                             <div className="space-y-6">
-                              <p className="text-[11px] font-bold uppercase tracking-widest text-neutral-500 px-3">Products</p>
+                              <p className={`text-[11px] font-bold uppercase tracking-widest px-3 ${isDark ? "text-neutral-500" : "text-stone-500"}`}>Products</p>
                               <div className="grid grid-cols-1 gap-2">
                                 {item.dropdown.links.map((link) => (
                                   <a
                                     key={link.title}
                                     href="#"
-                                    className="group flex items-start gap-3 rounded-2xl p-3 transition-colors hover:bg-white/5"
+                                    className={`group flex items-start gap-3 rounded-2xl p-3 transition-colors ${
+                                      isDark ? "hover:bg-white/5" : "hover:bg-stone-900/5"
+                                    }`}
                                   >
-                                    <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/5 bg-white/5 text-neutral-400 transition-colors group-hover:text-white group-hover:border-white/10">
+                                    <div className={`flex h-9 w-9 items-center justify-center rounded-xl transition-colors ${
+                                      isDark
+                                        ? "border border-white/5 bg-white/5 text-neutral-400 group-hover:text-white group-hover:border-white/10"
+                                        : "border border-stone-200 bg-stone-100 text-stone-500 group-hover:text-stone-900 group-hover:border-stone-300"
+                                    }`}>
                                       {link.icon && <link.icon className="h-4 w-4" />}
                                     </div>
                                     <div>
-                                      <p className="text-[13px] font-medium text-white">{link.title}</p>
-                                      <p className="text-[12px] text-neutral-500 leading-normal">{link.desc}</p>
+                                      <p className={`text-[13px] font-medium ${isDark ? "text-white" : "text-stone-900"}`}>{link.title}</p>
+                                      <p className={`text-[12px] leading-normal ${isDark ? "text-neutral-500" : "text-stone-500"}`}>{link.desc}</p>
                                     </div>
                                   </a>
                                 ))}
                               </div>
                             </div>
-                            <div className="border-l border-white/5 pl-6 space-y-4">
+                            <div className={`pl-6 space-y-4 ${isDark ? "border-l border-white/5" : "border-l border-stone-200/80"}`}>
                               {item.dropdown.featured.map((fBox) => (
-                                <div key={fBox.title} className={`rounded-2xl p-4 ${fBox.bg} border border-white/5 group cursor-pointer hover:border-white/10 transition-colors`}>
-                                  <div className="h-24 w-full rounded-lg bg-black/40 mb-3 relative overflow-hidden">
-                                     <div className="absolute inset-x-2 top-4 h-px bg-white/10" />
-                                     <div className="absolute inset-x-2 top-8 h-px bg-white/5" />
-                                     <div className="absolute left-4 bottom-4 h-6 w-1/2 rounded bg-white/5" />
+                                <div key={fBox.title} className={`rounded-2xl p-4 group cursor-pointer transition-colors ${
+                                  isDark
+                                    ? `${fBox.bg} border border-white/5 hover:border-white/10`
+                                    : "border border-stone-200 bg-stone-50/90 hover:border-stone-300"
+                                }`}>
+                                  <div className={`h-24 w-full rounded-lg mb-3 relative overflow-hidden ${isDark ? "bg-black/40" : "bg-white"}`}>
+                                     <div className={`absolute inset-x-2 top-4 h-px ${isDark ? "bg-white/10" : "bg-stone-200"}`} />
+                                     <div className={`absolute inset-x-2 top-8 h-px ${isDark ? "bg-white/5" : "bg-stone-100"}`} />
+                                     <div className={`absolute left-4 bottom-4 h-6 w-1/2 rounded ${isDark ? "bg-white/5" : "bg-stone-100"}`} />
                                   </div>
-                                  <p className="text-[13px] font-medium text-white">{fBox.title}</p>
-                                  <p className="text-[12px] text-neutral-500 leading-normal mt-1">{fBox.desc}</p>
+                                  <p className={`text-[13px] font-medium ${isDark ? "text-white" : "text-stone-900"}`}>{fBox.title}</p>
+                                  <p className={`text-[12px] leading-normal mt-1 ${isDark ? "text-neutral-500" : "text-stone-500"}`}>{fBox.desc}</p>
                                 </div>
                               ))}
                             </div>
@@ -134,7 +157,11 @@ export function PublicNavbar({ onNavigate }) {
                               <a
                                 key={link.title}
                                 href="#"
-                                className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] text-neutral-400 transition-colors hover:bg-white/5 hover:text-white"
+                                className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] transition-colors ${
+                                  isDark
+                                    ? "text-neutral-400 hover:bg-white/5 hover:text-white"
+                                    : "text-stone-500 hover:bg-stone-900/5 hover:text-stone-900"
+                                }`}
                               >
                                 {link.icon && <link.icon className="h-3.5 w-3.5" />}
                                 {link.title}
@@ -154,14 +181,18 @@ export function PublicNavbar({ onNavigate }) {
             <Button 
               variant="ghost" 
               size="sm" 
-              className="rounded-full px-4 text-[13px] text-neutral-400 hover:text-white hover:bg-white/5 transition-colors"
+              className={`rounded-full px-4 text-[13px] transition-colors ${
+                isDark ? "text-neutral-400 hover:text-white hover:bg-white/5" : "text-stone-600 hover:text-stone-900 hover:bg-stone-900/5"
+              }`}
               onClick={(e) => handleNavigate(e, "login")}
             >
               Log in
             </Button>
             <Button 
               size="sm" 
-              className="rounded-full px-4 text-[13px] bg-white text-black hover:bg-neutral-200 transition-colors"
+              className={`rounded-full px-4 text-[13px] transition-colors ${
+                isDark ? "bg-white text-black hover:bg-neutral-200" : "bg-stone-900 text-white hover:bg-stone-800"
+              }`}
               onClick={(e) => handleNavigate(e, "signup")}
             >
               Sign up
@@ -173,7 +204,9 @@ export function PublicNavbar({ onNavigate }) {
             <Button
               variant="ghost"
               size="icon"
-              className="rounded-full text-neutral-400 hover:text-white transition-colors"
+              className={`rounded-full transition-colors ${
+                isDark ? "text-neutral-400 hover:text-white" : "text-stone-500 hover:text-stone-900"
+              }`}
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             >
               {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -189,15 +222,15 @@ export function PublicNavbar({ onNavigate }) {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="fixed inset-0 z-[110] bg-black p-4 flex flex-col pt-24"
+            className={`fixed inset-0 z-[110] p-4 flex flex-col pt-24 ${isDark ? "bg-black" : "bg-stone-50"}`}
           >
             <div className="space-y-4">
               {NAV_ITEMS.map((item) => (
                 <div key={item.label} className="space-y-4">
-                  <p className="text-2xl font-bold text-white px-2">{item.label}</p>
+                  <p className={`text-2xl font-bold px-2 ${isDark ? "text-white" : "text-stone-900"}`}>{item.label}</p>
                   <div className="grid grid-cols-1 gap-2 pl-4">
                     {item.dropdown?.links.map((link) => (
-                      <a key={link.title} href="#" className="py-2 text-lg text-neutral-400 hover:text-white flex items-center gap-3">
+                      <a key={link.title} href="#" className={`py-2 text-lg flex items-center gap-3 ${isDark ? "text-neutral-400 hover:text-white" : "text-stone-500 hover:text-stone-900"}`}>
                          {link.icon && <link.icon className="h-5 w-5" />}
                          {link.title}
                       </a>
@@ -209,13 +242,13 @@ export function PublicNavbar({ onNavigate }) {
             <div className="mt-auto space-y-4 pb-12">
               <Button 
                 variant="outline" 
-                className="w-full rounded-2xl h-14 text-lg border-white/10 hover:bg-white/5"
+                className={`w-full rounded-2xl h-14 text-lg ${isDark ? "border-white/10 hover:bg-white/5" : "border-stone-200 bg-white hover:bg-stone-100"}`}
                 onClick={(e) => handleNavigate(e, "login")}
               >
                 Log in
               </Button>
               <Button 
-                className="w-full rounded-2xl h-14 text-lg bg-white text-black hover:bg-neutral-200"
+                className={`w-full rounded-2xl h-14 text-lg ${isDark ? "bg-white text-black hover:bg-neutral-200" : "bg-stone-900 text-white hover:bg-stone-800"}`}
                 onClick={(e) => handleNavigate(e, "signup")}
               >
                 Sign up

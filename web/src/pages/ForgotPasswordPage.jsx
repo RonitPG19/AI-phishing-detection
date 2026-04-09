@@ -64,7 +64,7 @@ export function ForgotPasswordPage({ theme, onNavigate, onThemeToggle }) {
         </div>
 
         <div className="pt-8">
-          <PublicNavbar onNavigate={onNavigate} />
+          <PublicNavbar onNavigate={onNavigate} theme={theme} />
         </div>
 
         <div className="mx-auto flex w-full max-w-md flex-1 items-center justify-center py-10">

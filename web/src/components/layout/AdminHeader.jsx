@@ -28,6 +28,15 @@ export function AdminHeader({ theme, onThemeToggle }) {
             </div>
 
             <div className="ml-auto flex items-center gap-1 md:ml-0">
+              <Button
+                variant="ghost"
+                size="icon"
+                type="button"
+                aria-label="Toggle theme"
+                onClick={onThemeToggle}
+              >
+                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </Button>
               <Button variant="ghost" size="icon" type="button" aria-label="Notifications">
                 <Bell className="h-4 w-4" />
               </Button>

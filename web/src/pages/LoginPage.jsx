@@ -6,7 +6,11 @@ import { Button } from "@/components/ui/button"
 
 export function LoginPage({ theme, onNavigate, onThemeToggle, onAuthSuccess }) {
   return (
-    <main className="min-h-screen bg-background px-4 py-4 sm:px-6 lg:px-8">
+    <main className={`min-h-screen px-4 py-4 sm:px-6 lg:px-8 ${
+      theme === "dark"
+        ? "bg-background"
+        : "bg-[radial-gradient(circle_at_right,rgba(59,130,246,0.08),transparent_30%),linear-gradient(180deg,#ffffff_0%,#ffffff_32%,#f8fafc_100%)]"
+    }`}>
       <div className="relative mx-auto flex min-h-screen max-w-5xl flex-col">
         <div className="absolute right-0 top-0 z-20">
           <Button variant="ghost" size="icon" type="button" className="rounded-full" onClick={onThemeToggle} aria-label="Toggle theme">
@@ -15,7 +19,7 @@ export function LoginPage({ theme, onNavigate, onThemeToggle, onAuthSuccess }) {
         </div>
 
         <div className="pt-5">
-          <PublicNavbar onNavigate={onNavigate} />
+          <PublicNavbar onNavigate={onNavigate} theme={theme} />
         </div>
 
         <div className="mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center py-6">
