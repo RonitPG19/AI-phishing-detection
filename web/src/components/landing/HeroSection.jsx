@@ -39,10 +39,10 @@ export function HeroSection({ onNavigate, theme = "dark" }) {
         >
           <motion.div variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0, transition: { duration: 0.5 } } }}>
             <h1 className={`text-5xl font-semibold leading-[1.05] tracking-tight sm:text-6xl xl:text-7xl ${isDark ? "text-white" : "text-stone-950"}`}>
-              Phishing analysis<br className="hidden lg:block" /> without the clutter
+              Phishing analysis,<br className="hidden lg:block" /> simplified.
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
-              Review suspicious emails without bouncing between tools. Tribunal organizes sender checks, risky links, and message-level findings into one short verdict that is easier to understand and act on.
+              Tribunal decodes suspicious emails directly in your inbox. We consolidate sender intelligence, link analysis, and message forensics into a single, actionable verdict.
             </p>
           </motion.div>
 
@@ -64,9 +64,9 @@ export function HeroSection({ onNavigate, theme = "dark" }) {
         </motion.div>
 
         <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.8, delay: 0.4 }}
+          initial={{ opacity: 0, scale: 0.98, y: 5 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.1, ease: "easeOut" }}
           className="relative hidden lg:block"
         >
           <div className={`relative mx-auto max-w-sm rounded-2xl overflow-hidden shadow-2xl ${
@@ -77,10 +77,9 @@ export function HeroSection({ onNavigate, theme = "dark" }) {
             <img
               src="/hero_demo.png"
               alt="Tribunal Platform Demo"
-              className="w-full h-auto opacity-90 transition-opacity duration-700 hover:opacity-100"
+              className="w-full h-auto opacity-100"
             />
             {/* Subtle overlay glow */}
-            <div className={`absolute inset-0 pointer-events-none ${isDark ? "bg-gradient-to-t from-black/20 via-transparent to-white/5" : "bg-gradient-to-t from-transparent via-transparent to-white/40"}`} />
           </div>
         </motion.div>
       </div>

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { getPathForRoute } from "@/lib/routing"
-import { ChevronDown, Mail, Shield, Zap, Terminal, Globe, Github, Twitter, BookOpen, HelpCircle, Menu, X } from "lucide-react"
+import { ChevronDown, Mail, ShieldCheck, Zap, Terminal, GlobeLock, Menu, X, Sun, Moon, Radar, Fingerprint, Activity, Target } from "lucide-react"
 
 const NAV_ITEMS = [
   {
@@ -10,21 +10,21 @@ const NAV_ITEMS = [
     dropdown: {
       type: "mega",
       links: [
-        { title: "Inbox Scanning", desc: "Analyze Gmail and Outlook emails directly from the extension.", icon: Mail },
-        { title: "Sender Verification", desc: "Catch mismatches, spoofing signals, and suspicious sender patterns.", icon: Shield },
-        { title: "Link Analysis", desc: "Inspect URLs, redirects, and risky domains before users click.", icon: Globe },
-        { title: "Report Dashboard", desc: "Review findings, verdicts, and scan history in one place.", icon: Terminal },
-        { title: "Clear Verdicts", desc: "Turn messy email signals into short, actionable summaries.", icon: Zap },
+        { title: "Inbox Scanning", desc: "Scan emails as they arrive, directly in your inbox.", icon: Radar },
+        { title: "Sender Insights", desc: "Know exactly who sent it and if they're spoofing.", icon: Fingerprint },
+        { title: "Link Safety Check", desc: "We scan every link so you don't have to worry.", icon: GlobeLock },
+        { title: "Activity History", desc: "Keep track of all your past scans and reports.", icon: Terminal },
+        { title: "Risk Analysis", desc: "Simple scores that tell you exactly what's wrong.", icon: Target },
       ],
       featured: [
         {
-          title: "Browser Extension",
-          desc: "Scan the email you are viewing without leaving your inbox.",
+          title: "Native Extension",
+          desc: "Analyze emails directly in your inbox without context switching.",
           bg: "bg-white/[0.03]",
         },
         {
-          title: "Admin Review",
-          desc: "Inspect reports, users, and follow-up actions from the dashboard.",
+          title: "Management Portal",
+          desc: "Oversee security reports, audit logs, and system performance.",
           bg: "bg-white/[0.03]",
         }
       ]
@@ -32,7 +32,7 @@ const NAV_ITEMS = [
   }
 ]
 
-export function PublicNavbar({ onNavigate, theme = "dark" }) {
+export function PublicNavbar({ onNavigate, theme = "dark", onThemeToggle }) {
   const [activeItem, setActiveItem] = useState(null)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const containerRef = useRef(null)
@@ -98,18 +98,17 @@ export function PublicNavbar({ onNavigate, theme = "dark" }) {
                       transition={{ duration: 0.2, ease: "easeOut" }}
                       className="absolute left-1/2 -translate-x-1/2 top-full pt-4"
                     >
-                      <div className={`relative overflow-hidden rounded-[32px] backdrop-blur-[60px] backdrop-saturate-[180%] ${item.dropdown.type === "mega" ? "w-[600px]" : "w-48"} ${
+                      <div className={`relative overflow-hidden rounded-[32px] backdrop-blur-[60px] backdrop-saturate-[180%] ${item.dropdown.type === "mega" ? "w-[380px]" : "w-48"} ${
                         isDark
-                          ? "border border-white/[0.08] bg-black/80 shadow-[0_32px_64px_-16px_rgba(0,0,0,1),inset_0_1px_1px_rgba(255,255,255,0.05)] ring-1 ring-white/[0.05]"
+                          ? "border border-white/[0.08] bg-black/95 shadow-[0_32px_64px_-16px_rgba(0,0,0,1),inset_0_1px_1px_rgba(255,255,255,0.05)] ring-1 ring-white/[0.05]"
                           : "border border-stone-200/80 bg-white/95 shadow-[0_28px_70px_-24px_rgba(15,23,42,0.22),inset_0_1px_0_rgba(255,255,255,0.95)] ring-1 ring-stone-200/60"
                       }`}>
                         <div className={`absolute inset-0 pointer-events-none ${isDark ? "bg-[url('https://res.cloudinary.com/djpkwtowz/image/upload/v1715478440/noise_uvw6h0.png')] opacity-[0.05] mix-blend-overlay" : "bg-[radial-gradient(circle_at_bottom_right,rgba(59,130,246,0.05),transparent_35%)]"}`} />
                         
                         {item.dropdown.type === "mega" ? (
-                          <div className="grid grid-cols-[1fr_240px] p-6">
-                            <div className="space-y-6">
-                              <p className={`text-[11px] font-bold uppercase tracking-widest px-3 ${isDark ? "text-neutral-500" : "text-stone-500"}`}>Products</p>
-                              <div className="grid grid-cols-1 gap-2">
+                          <div className="p-4">
+                            <div className="space-y-4">
+                              <div className="grid grid-cols-1 gap-1">
                                 {item.dropdown.links.map((link) => (
                                   <a
                                     key={link.title}
@@ -132,23 +131,6 @@ export function PublicNavbar({ onNavigate, theme = "dark" }) {
                                   </a>
                                 ))}
                               </div>
-                            </div>
-                            <div className={`pl-6 space-y-4 ${isDark ? "border-l border-white/5" : "border-l border-stone-200/80"}`}>
-                              {item.dropdown.featured.map((fBox) => (
-                                <div key={fBox.title} className={`rounded-2xl p-4 group cursor-pointer transition-colors ${
-                                  isDark
-                                    ? `${fBox.bg} border border-white/5 hover:border-white/10`
-                                    : "border border-stone-200 bg-stone-50/90 hover:border-stone-300"
-                                }`}>
-                                  <div className={`h-24 w-full rounded-lg mb-3 relative overflow-hidden ${isDark ? "bg-black/40" : "bg-white"}`}>
-                                     <div className={`absolute inset-x-2 top-4 h-px ${isDark ? "bg-white/10" : "bg-stone-200"}`} />
-                                     <div className={`absolute inset-x-2 top-8 h-px ${isDark ? "bg-white/5" : "bg-stone-100"}`} />
-                                     <div className={`absolute left-4 bottom-4 h-6 w-1/2 rounded ${isDark ? "bg-white/5" : "bg-stone-100"}`} />
-                                  </div>
-                                  <p className={`text-[13px] font-medium ${isDark ? "text-white" : "text-stone-900"}`}>{fBox.title}</p>
-                                  <p className={`text-[12px] leading-normal mt-1 ${isDark ? "text-neutral-500" : "text-stone-500"}`}>{fBox.desc}</p>
-                                </div>
-                              ))}
                             </div>
                           </div>
                         ) : (
@@ -196,6 +178,16 @@ export function PublicNavbar({ onNavigate, theme = "dark" }) {
               onClick={(e) => handleNavigate(e, "signup")}
             >
               Sign up
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`rounded-full transition-colors ${
+                isDark ? "text-neutral-400 hover:text-white" : "text-stone-500 hover:text-stone-900"
+              }`}
+              onClick={onThemeToggle}
+            >
+              {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
           </div>
 

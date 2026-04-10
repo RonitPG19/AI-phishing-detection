@@ -75,7 +75,7 @@ export function LoginForm({ className, onNavigate, onAuthSuccess, ...props }) {
     <Card className={cn("border-border/80 bg-card/95 shadow-sm", className)} {...props}>
       <CardHeader className="space-y-1 pb-3 pt-5 text-center">
         <CardTitle className="text-[2rem] font-semibold tracking-tight">Welcome back</CardTitle>
-        <p className="text-sm text-muted-foreground">Login to your Tribunal account</p>
+        <p className="text-sm text-muted-foreground">Login to your account</p>
       </CardHeader>
       <CardContent className="px-5 pb-5 sm:px-6 sm:pb-6">
         <form onSubmit={handleSubmit}>

@@ -12,14 +12,14 @@ import { LandingPage } from "@/pages/LandingPage"
 import { LoginPage } from "@/pages/LoginPage"
 import { OverviewPage } from "@/pages/OverviewPage"
 import { ReportsPage } from "@/pages/ReportsPage"
-// import { ScansPage } from "@/pages/ScansPage"
 import { SettingsPage } from "@/pages/SettingsPage"
 import { SignupPage } from "@/pages/SignupPage"
 import { UsersPage } from "@/pages/UsersPage"
+import { TermsPage } from "@/pages/TermsPage"
+import { PrivacyPage } from "@/pages/PrivacyPage"
 
 const pageComponents = {
   overview: OverviewPage,
-  // scans: ScansPage,
   reports: ReportsPage,
   users: UsersPage,
   settings: SettingsPage,
@@ -30,11 +30,12 @@ const authComponents = {
   login: LoginPage,
   signup: SignupPage,
   forgotPassword: ForgotPasswordPage,
+  terms: TermsPage,
+  privacy: PrivacyPage,
 }
 
 function getCurrentRoute() {
   if (typeof window === "undefined") return "overview"
-
   return getRouteFromPath(window.location.pathname)
 }
 
@@ -46,11 +47,21 @@ export default function App() {
   const [route, setRoute] = useState(getCurrentRoute)
   const [authSession, setAuthSession] = useState(() => getStoredAuthSession())
   const [theme, setTheme] = useState("dark")
+  const [searchQuery, setSearchQuery] = useState("")
 
   useEffect(() => {
     const root = document.documentElement
     root.classList.toggle("dark", theme === "dark")
   }, [theme])
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setRoute(getCurrentRoute())
+    }
+
+    window.addEventListener("popstate", handlePopState)
+    return () => window.removeEventListener("popstate", handlePopState)
+  }, [])
 
   useEffect(() => {
     if (!authSession?.accessToken && isProtectedRoute(route)) {
@@ -73,11 +84,9 @@ export default function App() {
 
   const navigateTo = (nextRoute) => {
     const nextPath = getPathForRoute(nextRoute)
-
     if (window.location.pathname !== nextPath) {
       window.history.pushState({}, "", nextPath)
     }
-
     setRoute(nextRoute)
   }
 
@@ -94,7 +103,6 @@ export default function App() {
 
   if (authComponents[route]) {
     const AuthPage = authComponents[route]
-
     return (
       <AuthPage
         theme={theme}
@@ -121,6 +129,10 @@ export default function App() {
         <AdminHeader
           theme={theme}
           onThemeToggle={() => setTheme(theme === "dark" ? "light" : "dark")}
+          authSession={authSession}
+          onLogout={handleLogout}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
         />
 
         <main className="flex-1 space-y-6 px-4 pb-28 pt-6 md:px-6 md:pb-4 md:pt-2">
@@ -129,7 +141,7 @@ export default function App() {
             <p className="text-sm text-muted-foreground">{pageMeta[safeRoute].description}</p>
           </div>
 
-          <ActivePage />
+          <ActivePage searchQuery={searchQuery} />
         </main>
       </SidebarInset>
 
