@@ -76,68 +76,146 @@ All findings are combined into a **weighted risk score (0–100)** with per-cate
 
 ## 3. System Architecture
 
+The backend follows a layered architecture with a single orchestration service (`PhishingScannerService`) coordinating domain checks and external integrations.
+
+### 3.1 Layered Component View
+
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        Browser Extension (Frontend)                     │
-│                    Scrapes email data → sends to API                    │
-└───────────────────────────────────┬─────────────────────────────────────┘
-                                    │ POST /api/phishing/scan
+┌──────────────────────────────────────────────────────────────────────────┐
+│ Client Layer                                                            │
+│ Browser Extension / API Consumer                                        │
+└───────────────────────────────────┬──────────────────────────────────────┘
+                                    │ HTTP JSON
                                     ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      PhishingScannerController                          │
-│                 Validates input → delegates to service                  │
-└───────────────────────────────────┬─────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│ API Layer                                                               │
+│ `PhishingScannerController` + `GlobalExceptionHandler`                  │
+│ - Request validation (`@Valid`)                                         │
+│ - Error mapping (400/404/500)                                           │
+└───────────────────────────────────┬──────────────────────────────────────┘
                                     │
                                     ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                       PhishingScannerService                            │
-│                     ┌──────────────────────────┐                        │
-│                     │   ANALYSIS PIPELINE      │                        │
-│                     │ ┌──────────────────────┐ │                        │
-│                     │ │ 1. URL Extraction    │ │                        │
-│                     │ │    (HTML / Plaintext) │ │                        │
-│                     │ ├──────────────────────┤ │                        │
-│                     │ │ 2. Redirect Chain    │──────► RedirectChainResolver
-│                     │ │    Resolution        │ │                        │
-│                     │ ├──────────────────────┤ │                        │
-│                     │ │ 3. Header Analysis   │ │                        │
-│                     │ │    (SPF/DKIM/DMARC)  │ │                        │
-│                     │ ├──────────────────────┤ │                        │
-│                     │ │ 4. Threat Intel      │──────► ThreatIntelService
-│                     │ │    Blacklist Check    │ │    (OpenPhish/PhishTank)
-│                     │ ├──────────────────────┤ │                        │
-│                     │ │ 5. Safe Browsing     │──────► Google Safe Browsing API
-│                     │ │    API Check         │ │                        │
-│                     │ ├──────────────────────┤ │                        │
-│                     │ │ 6. Homograph/IDN     │ │                        │
-│                     │ │    Detection         │ │                        │
-│                     │ ├──────────────────────┤ │                        │
-│                     │ │ 7. Domain Age        │──────► WHOIS Servers (TCP:43)
-│                     │ │    (WHOIS Lookup)    │ │                        │
-│                     │ ├──────────────────────┤ │                        │
-│                     │ │ 8. Typosquatting     │──────► Tranco + Umbrella CSVs
-│                     │ │    Detection         │ │                        │
-│                     │ ├──────────────────────┤ │                        │
-│                     │ │ 9. SSL Certificate   │──────► HTTPS Connections
-│                     │ │    Inspection        │ │                        │
-│                     │ ├──────────────────────┤ │                        │
-│                     │ │ 10. AI/LLM Analysis  │──────► GeminiEmailAnalyzer
-│                     │ │     (Gemini)         │ │    (Gemini API)
-│                     │ ├──────────────────────┤ │                        │
-│                     │ │ 11. Whitelist Check  │──────► WhitelistManager
-│                     │ ├──────────────────────┤ │                        │
-│                     │ │ 12. Risk Score       │ │                        │
-│                     │ │     Calculation      │ │                        │
-│                     │ └──────────────────────┘ │                        │
-│                     └──────────────────────────┘                        │
-└───────────────────────────────────┬─────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                       FirestoreReportService                            │
-│              Persists report to Firestore → returns reportId            │
-└─────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│ Orchestration Layer                                                     │
+│ `PhishingScannerService`                                                │
+│ - Executes detection pipeline in deterministic order                     │
+│ - Aggregates findings by category                                       │
+│ - Applies weighted scoring + overrides                                  │
+└───────────────┬───────────────────────┬───────────────────────┬──────────┘
+                │                       │                       │
+                ▼                       ▼                       ▼
+┌────────────────────────┐  ┌────────────────────────┐  ┌───────────────────────┐
+│ Analysis Components    │  │ External Intelligence  │  │ Persistence           │
+│ - Redirect resolver    │  │ - Safe Browsing API    │  │ `FirestoreReportService`│
+│ - Header inspection    │  │ - Gemini API           │  │ (optional via feature  │
+│ - WHOIS/SSL/IDN        │  │ - OpenPhish/PhishTank  │  │ flag `firebase.enabled`)│
+│ - Typosquat detection  │  │                        │  │                       │
+└────────────────────────┘  └────────────────────────┘  └───────────────────────┘
+                │
+                ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│ Local Data Layer                                                        │
+│ - Threat-intel cache (`blacklist.csv` + metadata)                       │
+│ - Trusted-domain datasets (Tranco/Umbrella CSVs)                        │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
+
+### 3.2 Mermaid Diagram (Docs/Presentation Friendly)
+
+```mermaid
+flowchart TB
+  client["Client Layer<br/>Browser Extension / API Consumer"]
+
+  subgraph apiLayer["API Layer"]
+    controller["PhishingScannerController"]
+    exceptions["GlobalExceptionHandler"]
+  end
+
+  subgraph orchestration["Orchestration Layer"]
+    scanner["PhishingScannerService"]
+  end
+
+  subgraph analysis["Analysis Components"]
+    redirect["RedirectChainResolver"]
+    headers["Header Inspection"]
+    domainChecks["WHOIS / SSL / IDN / Typosquat"]
+    scoring["Risk Scoring Engine"]
+  end
+
+  subgraph ext["External Intelligence"]
+    gsb["Google Safe Browsing API"]
+    gemini["Gemini API"]
+    feeds["OpenPhish / PhishTank Feeds"]
+  end
+
+  subgraph data["Data Layer"]
+    localCache["Local Threat Cache<br/>blacklist.csv + metadata"]
+    trustedCsv["Trusted Domain CSVs<br/>Tranco / Umbrella"]
+  end
+
+  firestore["FirestoreReportService (optional)"]
+  db[("Google Cloud Firestore")]
+
+  client -->|"POST /api/phishing/scan"| controller
+  controller --> scanner
+  scanner --> redirect
+  scanner --> headers
+  scanner --> domainChecks
+  scanner --> scoring
+
+  scanner --> gsb
+  scanner --> gemini
+  scanner --> feeds
+
+  feeds --> localCache
+  scanner --> localCache
+  scanner --> trustedCsv
+
+  scanner --> firestore
+  firestore --> db
+
+  exceptions -. "Validation / error responses" .- controller
+```
+
+### 3.3 Runtime Request Flow
+
+1. Client sends email payload to `POST /api/phishing/scan`.
+2. Controller validates schema and forwards the normalized request to `PhishingScannerService`.
+3. Service extracts and normalizes URLs, resolves redirects, and performs rule-based checks.
+4. Service calls external intelligence providers (Safe Browsing, Gemini) with timeout and retry strategies.
+5. Service computes capped category scores and final verdict.
+6. Service attempts asynchronous-safe persistence via `FirestoreReportService` (if enabled).
+7. API responds with findings, score, and optional `reportId` even when external dependencies partially fail.
+
+### 3.4 Architecture Characteristics
+
+- **Deterministic core:** Rule-based checks execute in a fixed order to keep scoring reproducible.
+- **Graceful degradation:** AI, threat feeds, and Firestore failures do not block the scan response.
+- **Isolation of concerns:** Controller handles transport concerns, service handles decision logic, adapters handle integrations.
+- **Operational safety:** Local feed cache + scheduled refresh reduce startup coupling to external services.
+- **Extensibility:** New checks can be added as pipeline stages without changing API contracts.
+
+### 3.5 Recommended Evolution Path
+
+To improve maintainability as the project grows, evolve from a single large orchestrator into a strategy-based pipeline:
+
+- Define a `ScanCheck` interface (e.g., `supports(context)`, `execute(context)`).
+- Move each check (WHOIS, SSL, typosquat, AI, etc.) into isolated classes implementing `ScanCheck`.
+- Register checks via Spring and execute them in configured order (`@Order` or property-driven list).
+- Centralize shared concerns (timeouts, retries, metrics) in reusable integration clients.
+- Add per-check timing metrics to identify latency hotspots and enable SLO-driven tuning.
+
+### 3.6 Architecture Decision Records (ADR) Snapshot
+
+The following ADR-style summary captures key production-impacting decisions.
+
+| ADR ID | Decision | Status | Why This Decision | Trade-offs |
+|-------|----------|--------|-------------------|------------|
+| ADR-001 | Use capped category scoring with uncapped blacklist and hard override | Accepted | Prevents weak signals (e.g., shorteners/new certs) from dominating while ensuring high-confidence signals can decisively classify phishing | Requires careful weight calibration over time; may under-score novel attacks that do not hit strong-signal categories |
+| ADR-002 | Fail-open scan response for external dependency failures | Accepted | User still receives a scan verdict even if Gemini, Safe Browsing, threat feed refresh, or Firestore is temporarily unavailable | Can reduce detection quality during outages; requires clear observability to know when degraded mode is active |
+| ADR-003 | AI as assistive signal with fallback to rule-based engine | Accepted | Keeps AI valuable for semantic/social-engineering detection but prevents LLM instability from becoming a single point of failure | Some nuanced phishing may be missed when AI is unavailable; added complexity from retry/backoff and null-safe handling |
+
+**Review cadence:** Revisit these ADRs whenever scoring thresholds, external integrations, or uptime/SLO targets change.
 
 ---
 
