@@ -15,16 +15,11 @@ export function PlatformShowcase({ theme = "dark" }) {
             transition={{ duration: 0.6 }}
             className="space-y-8 flex flex-col items-center text-center"
           >
-            <div className={`p-1 w-full rounded-[32px] ${isDark ? "bg-white/5" : "bg-stone-200/50"}`}>
-              <div className="rounded-[28px] bg-neutral-950 overflow-hidden shadow-2xl relative aspect-[4/5] md:aspect-square flex items-center justify-center">
-                <img 
-                  src="/scanchoose-demo.png" 
-                  alt="Scan Configuration Demo" 
-                  className="w-full h-full object-contain brightness-110"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
-              </div>
-            </div>
+            <img 
+              src="/scanchoose-demo.png" 
+              alt="Scan Configuration Demo" 
+              className="w-full max-w-[320px] mx-auto h-auto rounded-xl"
+            />
 
             <div className="space-y-4">
               <h2 className={`text-3xl md:text-5xl font-semibold tracking-tight ${isDark ? "text-white" : "text-stone-900"}`}>
@@ -44,16 +39,11 @@ export function PlatformShowcase({ theme = "dark" }) {
             transition={{ duration: 0.6, delay: 0.2 }}
             className="space-y-8 flex flex-col items-center text-center"
           >
-            <div className={`p-1 w-full rounded-[32px] ${isDark ? "bg-white/5" : "bg-stone-200/50"}`}>
-              <div className="rounded-[28px] bg-neutral-950 overflow-hidden shadow-2xl relative aspect-[4/5] md:aspect-square flex items-center justify-center">
-                <img 
-                  src="/history-demo.png" 
-                  alt="Scan History Demo" 
-                  className="w-full h-full object-contain brightness-110"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
-              </div>
-            </div>
+            <img 
+              src="/history-demo.png" 
+              alt="Scan History Demo" 
+              className="w-full max-w-[320px] mx-auto h-auto rounded-xl"
+            />
 
             <div className="space-y-4">
               <h2 className={`text-3xl md:text-5xl font-semibold tracking-tight ${isDark ? "text-white" : "text-stone-900"}`}>
