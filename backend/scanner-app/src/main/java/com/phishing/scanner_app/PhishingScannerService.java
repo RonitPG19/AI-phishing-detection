@@ -3,6 +3,8 @@ package com.phishing.scanner_app;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -35,6 +37,7 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.temporal.ChronoUnit;
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -45,6 +48,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -52,7 +60,12 @@ import java.util.regex.Pattern;
 @Service
 public class PhishingScannerService {
 
+    private static final Logger logger = LoggerFactory.getLogger(PhishingScannerService.class);
+
     private static final int NETWORK_TIMEOUT_MS = 5000;
+    private static final int WHOIS_READ_TIMEOUT_MS = 5000;
+    private static final int REDIRECT_MAX_THREADS = 8;
+    private static final int WHOIS_MAX_THREADS = 6;
     private static final int DOMAIN_AGE_SUSPICIOUS_THRESHOLD_DAYS = 60;
     private static final int CERTIFICATE_NEW_THRESHOLD_DAYS = 15;
     private static final int LETS_ENCRYPT_DOMAIN_AGE_THRESHOLD_DAYS = 30;
@@ -88,6 +101,8 @@ public class PhishingScannerService {
     }
 
     public EmailScanReport scanEmail(EmailRequest request, String safeBrowsingApiKey) {
+        String traceId = "email-" + Long.toHexString(System.nanoTime());
+        long scanStartNs = System.nanoTime();
         String subject = defaultString(request.getSubject(), "(no subject)");
         String sender = defaultString(request.getFrom(), "(unknown)");
         boolean hasBody = request.hasBodyContent();
@@ -115,9 +130,15 @@ public class PhishingScannerService {
         List<RiskFinding> findings = new ArrayList<>();
 
         // ── Redirect chain resolution ──
+        long redirectStartNs = System.nanoTime();
+        int findingsBeforeRedirect = findings.size();
         Set<String> resolvedUrls = new LinkedHashSet<>(urls);
+        Map<String, RedirectChainResolver.RedirectChain> redirectResults = resolveRedirectsBounded(urls);
         for (String url : urls) {
-            RedirectChainResolver.RedirectChain chain = redirectChainResolver.resolve(url);
+            RedirectChainResolver.RedirectChain chain = redirectResults.get(url);
+            if (chain == null) {
+                continue;
+            }
             if (chain.wasRedirected()) {
                 resolvedUrls.add(chain.finalUrl());
 
@@ -144,6 +165,9 @@ public class PhishingScannerService {
                 }
             }
         }
+        long redirectMs = elapsedMillis(redirectStartNs);
+        logger.info("scan={} stage=redirect durationMs={} inputUrls={} resolvedUrls={} findingsAdded={}",
+            traceId, redirectMs, urls.size(), resolvedUrls.size(), findings.size() - findingsBeforeRedirect);
 
         Set<String> allUrls = resolvedUrls;
 
@@ -157,22 +181,45 @@ public class PhishingScannerService {
 
         // ── Link threat checks (always performed) ──
         checkThreatIntelBlacklist(allUrls, findings);
+
+        long safeBrowsingStartNs = System.nanoTime();
+        int findingsBeforeSafeBrowsing = findings.size();
         checkGoogleSafeBrowsing(allUrls, safeBrowsingApiKey, findings);
+        long safeBrowsingMs = elapsedMillis(safeBrowsingStartNs);
+        logger.info("scan={} stage=safeBrowsing durationMs={} urlCount={} findingsAdded={}",
+            traceId, safeBrowsingMs, allUrls.size(), findings.size() - findingsBeforeSafeBrowsing);
 
         Map<String, String> urlDomainMap = buildUrlDomainMap(allUrls);
         inspectHomographDomains(urlDomainMap, trustedDomains, findings);
 
+        long whoisStartNs = System.nanoTime();
+        int findingsBeforeWhois = findings.size();
         Map<String, Integer> domainAgeByRootDomain = inspectDomainAges(urlDomainMap.values(), findings);
+        long whoisMs = elapsedMillis(whoisStartNs);
+        logger.info("scan={} stage=whois durationMs={} uniqueDomains={} findingsAdded={}",
+            traceId, whoisMs, countUniqueRootDomains(urlDomainMap.values()), findings.size() - findingsBeforeWhois);
+
         inspectTyposquatting(urlDomainMap.values(), trustedDomains, findings);
+
+        long sslStartNs = System.nanoTime();
+        int findingsBeforeSsl = findings.size();
         inspectSslCertificates(allUrls, domainAgeByRootDomain, findings);
+        long sslMs = elapsedMillis(sslStartNs);
+        logger.info("scan={} stage=ssl durationMs={} urlCount={} findingsAdded={}",
+            traceId, sslMs, allUrls.size(), findings.size() - findingsBeforeSsl);
 
         // ── AI-powered email body analysis (only when body content is present) ──
         GeminiEmailAnalyzer.GeminiAnalysisResult aiAnalysis = null;
+        long geminiMs = -1;
         if (hasBody) {
             String bodyForAnalysis = emailContent.hasHtml()
                 ? org.jsoup.Jsoup.parse(emailContent.getHtml()).text()
                 : emailContent.getText();
+
+            long geminiStartNs = System.nanoTime();
             aiAnalysis = geminiEmailAnalyzer.analyze(subject, sender, bodyForAnalysis);
+            geminiMs = elapsedMillis(geminiStartNs);
+            logger.info("scan={} stage=gemini durationMs={} bodyPresent={}", traceId, geminiMs, true);
 
             if (aiAnalysis != null && aiAnalysis.indicators != null) {
                 for (GeminiEmailAnalyzer.PhishingIndicator indicator : aiAnalysis.indicators) {
@@ -184,6 +231,8 @@ public class PhishingScannerService {
                     ));
                 }
             }
+        } else {
+            logger.info("scan={} stage=gemini durationMs={} bodyPresent={}", traceId, 0, false);
         }
 
         // ── Risk scoring ──
@@ -199,6 +248,10 @@ public class PhishingScannerService {
 
         CategorizedFindings categorized = categorizeResults(findings, riskScoreResult.scoreBreakdown());
 
+        long totalMs = elapsedMillis(scanStartNs);
+        logger.info("scan={} stage=total durationMs={} urls={} findings={} whoisMs={} sslMs={} redirectMs={} safeBrowsingMs={} geminiMs={}",
+            traceId, totalMs, allUrls.size(), findings.size(), whoisMs, sslMs, redirectMs, safeBrowsingMs, geminiMs);
+
         return new EmailScanReport(subject, sender, allUrls.size(), categorized, headerInspectionResult, riskScoreResult.overallScore(), null, aiAnalysis);
     }
 
@@ -207,14 +260,22 @@ public class PhishingScannerService {
      * This is a link-only scan — no email headers, body, or AI analysis.
      */
     public LinkScanReport scanLinks(List<String> urls, String safeBrowsingApiKey) {
+        String traceId = "links-" + Long.toHexString(System.nanoTime());
+        long scanStartNs = System.nanoTime();
         List<RiskFinding> findings = new ArrayList<>();
 
         Set<String> urlSet = new LinkedHashSet<>(urls);
 
         // ── Redirect chain resolution ──
+        long redirectStartNs = System.nanoTime();
+        int findingsBeforeRedirect = findings.size();
         Set<String> resolvedUrls = new LinkedHashSet<>(urlSet);
+        Map<String, RedirectChainResolver.RedirectChain> redirectResults = resolveRedirectsBounded(urlSet);
         for (String url : urlSet) {
-            RedirectChainResolver.RedirectChain chain = redirectChainResolver.resolve(url);
+            RedirectChainResolver.RedirectChain chain = redirectResults.get(url);
+            if (chain == null) {
+                continue;
+            }
             if (chain.wasRedirected()) {
                 resolvedUrls.add(chain.finalUrl());
 
@@ -241,26 +302,51 @@ public class PhishingScannerService {
                 }
             }
         }
+        long redirectMs = elapsedMillis(redirectStartNs);
+        logger.info("scan={} stage=redirect durationMs={} inputUrls={} resolvedUrls={} findingsAdded={}",
+            traceId, redirectMs, urlSet.size(), resolvedUrls.size(), findings.size() - findingsBeforeRedirect);
 
         Set<String> allUrls = resolvedUrls;
 
         // ── Threat intelligence checks ──
         checkThreatIntelBlacklist(allUrls, findings);
+
+        long safeBrowsingStartNs = System.nanoTime();
+        int findingsBeforeSafeBrowsing = findings.size();
         checkGoogleSafeBrowsing(allUrls, safeBrowsingApiKey, findings);
+        long safeBrowsingMs = elapsedMillis(safeBrowsingStartNs);
+        logger.info("scan={} stage=safeBrowsing durationMs={} urlCount={} findingsAdded={}",
+            traceId, safeBrowsingMs, allUrls.size(), findings.size() - findingsBeforeSafeBrowsing);
 
         // ── Domain inspections ──
         Map<String, String> urlDomainMap = buildUrlDomainMap(allUrls);
         inspectHomographDomains(urlDomainMap, trustedDomains, findings);
 
+        long whoisStartNs = System.nanoTime();
+        int findingsBeforeWhois = findings.size();
         Map<String, Integer> domainAgeByRootDomain = inspectDomainAges(urlDomainMap.values(), findings);
+        long whoisMs = elapsedMillis(whoisStartNs);
+        logger.info("scan={} stage=whois durationMs={} uniqueDomains={} findingsAdded={}",
+            traceId, whoisMs, countUniqueRootDomains(urlDomainMap.values()), findings.size() - findingsBeforeWhois);
+
         inspectTyposquatting(urlDomainMap.values(), trustedDomains, findings);
+
+        long sslStartNs = System.nanoTime();
+        int findingsBeforeSsl = findings.size();
         inspectSslCertificates(allUrls, domainAgeByRootDomain, findings);
+        long sslMs = elapsedMillis(sslStartNs);
+        logger.info("scan={} stage=ssl durationMs={} urlCount={} findingsAdded={}",
+            traceId, sslMs, allUrls.size(), findings.size() - findingsBeforeSsl);
 
         // ── Calculate risk score (link-only — no header/auth/AI components) ──
         RiskScoreResult riskScoreResult = calculateLinkOnlyRiskScore(findings);
 
         int score = riskScoreResult.overallScore();
         String verdict = LinkScanReport.verdictFromScore(score);
+
+        long totalMs = elapsedMillis(scanStartNs);
+        logger.info("scan={} stage=total durationMs={} urls={} findings={} whoisMs={} sslMs={} redirectMs={} safeBrowsingMs={}",
+            traceId, totalMs, allUrls.size(), findings.size(), whoisMs, sslMs, redirectMs, safeBrowsingMs);
 
         return new LinkScanReport(
             allUrls.size(),
@@ -593,9 +679,18 @@ public class PhishingScannerService {
 
     private static Map<String, Integer> inspectDomainAges(Collection<String> domains, List<RiskFinding> findings) {
         Map<String, Integer> domainAgeByRootDomain = new HashMap<>();
+        Set<String> uniqueRootDomains = new LinkedHashSet<>();
         for (String domain : domains) {
             String rootDomain = extractRootDomain(domain);
-            Integer age = DOMAIN_AGE_CACHE.computeIfAbsent(rootDomain, PhishingScannerService::lookupDomainAgeInDays);
+            if (!isBlank(rootDomain)) {
+                uniqueRootDomains.add(rootDomain);
+            }
+        }
+
+        Map<String, Integer> ageByRootDomain = lookupDomainAgesBounded(uniqueRootDomains);
+        for (String domain : domains) {
+            String rootDomain = extractRootDomain(domain);
+            Integer age = ageByRootDomain.get(rootDomain);
             domainAgeByRootDomain.put(rootDomain, age);
             if (age != null && age < DOMAIN_AGE_SUSPICIOUS_THRESHOLD_DAYS) {
                 findings.add(new RiskFinding(rootDomain, "Domain is only " + age + " days old", Severity.MEDIUM));
@@ -624,6 +719,7 @@ public class PhishingScannerService {
     private static String queryWhoisServer(String server, String domain) throws IOException {
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress(server, 43), NETWORK_TIMEOUT_MS);
+            socket.setSoTimeout(WHOIS_READ_TIMEOUT_MS);
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
                  BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8))) {
                 writer.write(domain + "\r\n");
@@ -1064,6 +1160,98 @@ public class PhishingScannerService {
             }
             return sb.toString();
         }
+    }
+
+    private Map<String, RedirectChainResolver.RedirectChain> resolveRedirectsBounded(Set<String> urls) {
+        if (urls == null || urls.isEmpty()) {
+            return Map.of();
+        }
+
+        List<String> orderedUrls = new ArrayList<>(urls);
+        int poolSize = Math.max(1, Math.min(REDIRECT_MAX_THREADS, orderedUrls.size()));
+        ExecutorService executor = Executors.newFixedThreadPool(poolSize);
+        List<Future<RedirectChainResolver.RedirectChain>> futures = new ArrayList<>(orderedUrls.size());
+
+        try {
+            for (String url : orderedUrls) {
+                futures.add(executor.submit(() -> redirectChainResolver.resolve(url)));
+            }
+
+            Map<String, RedirectChainResolver.RedirectChain> results = new LinkedHashMap<>();
+            for (int i = 0; i < orderedUrls.size(); i++) {
+                String url = orderedUrls.get(i);
+                try {
+                    results.put(url, futures.get(i).get());
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    logWarning("Redirect resolution interrupted for " + url, exception);
+                    break;
+                } catch (ExecutionException exception) {
+                    logWarning("Redirect resolution failed for " + url, exception);
+                }
+            }
+            return results;
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private static Map<String, Integer> lookupDomainAgesBounded(Set<String> rootDomains) {
+        if (rootDomains == null || rootDomains.isEmpty()) {
+            return Map.of();
+        }
+
+        List<String> orderedRoots = new ArrayList<>(rootDomains);
+        int poolSize = Math.max(1, Math.min(WHOIS_MAX_THREADS, orderedRoots.size()));
+        ExecutorService executor = Executors.newFixedThreadPool(poolSize);
+        List<Future<Map.Entry<String, Integer>>> futures = new ArrayList<>(orderedRoots.size());
+
+        try {
+            for (String rootDomain : orderedRoots) {
+                Callable<Map.Entry<String, Integer>> task = () -> {
+                    Integer age = DOMAIN_AGE_CACHE.get(rootDomain);
+                    if (age == null) {
+                        age = lookupDomainAgeInDays(rootDomain);
+                        if (age != null) {
+                            DOMAIN_AGE_CACHE.putIfAbsent(rootDomain, age);
+                        }
+                    }
+                    return new AbstractMap.SimpleEntry<>(rootDomain, age);
+                };
+                futures.add(executor.submit(task));
+            }
+
+            Map<String, Integer> ageByRoot = new LinkedHashMap<>();
+            for (int i = 0; i < orderedRoots.size(); i++) {
+                String rootDomain = orderedRoots.get(i);
+                try {
+                    Map.Entry<String, Integer> entry = futures.get(i).get();
+                    ageByRoot.put(entry.getKey(), entry.getValue());
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    logWarning("WHOIS lookup interrupted for " + rootDomain, exception);
+                    break;
+                } catch (ExecutionException exception) {
+                    logWarning("WHOIS lookup failed for " + rootDomain, exception);
+                    ageByRoot.put(rootDomain, null);
+                }
+            }
+            return ageByRoot;
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private static long elapsedMillis(long startNs) {
+        return (System.nanoTime() - startNs) / 1_000_000;
+    }
+
+    private static int countUniqueRootDomains(Collection<String> domains) {
+        Set<String> roots = new LinkedHashSet<>();
+        for (String domain : domains) {
+            roots.add(extractRootDomain(domain));
+        }
+        return roots.size();
     }
 
     private static void logWarning(String message, Exception exception) {
