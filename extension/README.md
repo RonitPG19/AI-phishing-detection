@@ -1,99 +1,27 @@
-# Extension
+# Tribunal Extension
 
-Browser extension for phishing scanning on supported webmail pages.
+This module is in good shape now, and this README reflects the current extension behavior (Gmail + Outlook, auth, API scan, history, debug, and Firefox dev flow).
 
-## Purpose
+## What It Does
 
-This extension currently targets Gmail first and Outlook second.
+- Injects content scripts into Gmail and Outlook web apps.
+- Extracts current email data from live DOM (subject, sender, recipients, body, links, metadata).
+- Normalizes payload and sends scan requests through background service worker.
+- Shows scan results in:
+  - popup `Scan` tab
+  - in-page floating widget (`Analyze Email`)
+- Stores local scan history and latest debug payload/result in `chrome.storage.local`.
+- Hydrates history from backend reports endpoint when logged in.
+- Supports Firebase + Flask auth flow in popup.
 
-The current implementation does four things:
-
-1. Detects when the user is on a supported mail page
-2. Extracts visible email data from an opened message
-3. Normalizes the extracted data into a single internal payload shape
-4. Sends that payload through the background layer and returns a mock scan result when no real API is configured
-
-When the API is disabled or no endpoint is configured, scans stay in local preview mode and use the mock result builder. Once an endpoint is enabled, the background layer sends the trimmed backend contract payload instead.
-
-## Tech Stack
+## Current Stack
 
 - Manifest V3
-- Vite
-- CRXJS Vite plugin
 - Vanilla JavaScript
+- Vite + `@crxjs/vite-plugin`
+- Firefox packaging helper script
 
-## Prerequisites
-
-- Node.js 20+
-- npm
-
-## Install
-
-```bash
-cd extension
-npm install
-```
-
-## Common Commands
-
-```bash
-# install dependencies
-cd extension
-npm install
-
-# chromium / thorium build
-npm run build
-
-# firefox build
-npm run build:firefox
-```
-
-## Build
-
-### Chromium / Thorium build
-
-```bash
-npm run build
-```
-
-The unpacked Chromium-compatible build is generated in `extension/dist`.
-
-### Firefox build
-
-```bash
-npm run build:firefox
-```
-
-The Firefox-compatible temporary add-on build is generated in `extension/dist-firefox`.
-
-## Run In Browser
-
-### Thorium / Chromium-based browsers
-
-1. Open the extensions page.
-2. Enable Developer mode.
-3. Click `Load unpacked`.
-4. Select `extension/dist`.
-
-After code changes:
-
-1. Run `npm run build`
-2. Reload the unpacked extension
-3. Refresh the Gmail / Outlook tab
-
-### Firefox
-
-1. Open `about:debugging#/runtime/this-firefox`.
-2. Click `Load Temporary Add-on`.
-3. Select `extension/dist-firefox/manifest.json`.
-
-After code changes:
-
-1. Run `npm run build:firefox`
-2. Reload the temporary add-on
-3. Refresh the Gmail / Outlook tab
-
-## Folder Structure
+## Project Structure
 
 ```text
 extension/
@@ -108,6 +36,9 @@ extension/
       service-worker.js
     content/
       extractors/
+        gmail-extractor.js
+        normalizer.js
+        outlook-extractor.js
       gmail.js
       outlook.js
       widget.js
@@ -116,180 +47,123 @@ extension/
       popup.css
       popup.js
     shared/
+      auth-client.js
       constants.js
       mock-scan-result.js
       storage.js
-      utils.js
   manifest.json
   package.json
-  vite.config.js
-  vite.preview.js
 ```
 
-## Folder Responsibilities
+## Prerequisites
 
-### `public/`
+- Node.js 20+
+- npm
 
-Static assets copied into the final extension build.
+## Install
 
-- `icons/`: extension icons referenced by `manifest.json`
-- `logo.png`: Tribunal logo used by popup and in-page widget
+```bash
+cd extension
+npm install
+```
 
-### `scripts/`
+## Build Commands
 
-Build helpers.
+```bash
+# Chromium-based unpacked build
+npm run build
 
-- `prepare-firefox-build.mjs`: patches the generated manifest into a Firefox-compatible temporary add-on build
+# Firefox temporary add-on build
+npm run build:firefox
+```
 
-### `src/background/`
+- Chromium output: `extension/dist`
+- Firefox output: `extension/dist-firefox`
 
-Background runtime code.
+## Load Extension
 
-- `service-worker.js`: receives scan requests from content scripts and sends responses back
-- `api-client.js`: owns the network call boundary; falls back to mock results when no real API is configured
+### Chromium / Thorium / Brave
 
-Use this folder when work belongs to background execution, request routing, token handling, or backend communication.
+1. Open extensions page.
+2. Enable Developer mode.
+3. Load unpacked from `extension/dist`.
 
-### `src/content/`
+### Firefox
 
-Code injected into Gmail / Outlook pages.
+1. Open `about:debugging#/runtime/this-firefox`.
+2. Click `Load Temporary Add-on`.
+3. Select `extension/dist-firefox/manifest.json`.
 
-- `gmail.js`: Gmail entry point
-- `outlook.js`: Outlook entry point
-- `widget.js`: floating in-page Tribunal UI
-- `extractors/`: provider-specific DOM extraction logic
+## Runtime Configuration
 
-Use this folder when work depends on the live email page DOM.
+Defaults are in `src/shared/constants.js`:
 
-### `src/content/extractors/`
+- scan API endpoint: `http://127.0.0.1:8080/api/phishing/scan`
+- Flask auth base URL: `http://127.0.0.1:5001`
 
-Provider-specific parsing logic.
+Expected backend routes used by extension:
 
-- `gmail-extractor.js`: Gmail DOM selectors and Gmail-specific cleanup
-- `outlook-extractor.js`: Outlook DOM selectors and Outlook-specific cleanup
-- `normalizer.js`: converts extracted provider data into one internal payload shape
+- `POST /api/phishing/scan`
+- `GET /api/phishing/reports?limit=50` (history hydration)
+- Flask auth/user routes used by `src/shared/auth-client.js`
 
-This folder should stay provider-aware. If a selector changes because Gmail or Outlook changes its DOM, the fix should usually live here.
+## Data Stored in `chrome.storage.local`
 
-### `src/popup/`
+- `tribunal_api_config`
+- `tribunal_auth_config`
+- `tribunal_auth_session`
+- `tribunal_history`
+- `tribunal_widget_state`
+- `tribunal_widget_preferences`
+- `tribunal_last_scan_debug`
 
-Browser action popup UI.
+## Scan Flow
 
-- `popup.html`: popup shell
-- `popup.css`: popup styling
-- `popup.js`: popup state, navigation, and debug/settings/history rendering
+1. Popup or widget triggers scan.
+2. Content script extracts current mail and normalizes payload.
+3. Background service worker receives `SCAN_EMAIL`.
+4. Background calls API client:
+  - live backend request when enabled
+  - mock result fallback if API disabled/no endpoint
+5. Result is returned to UI and stored in local history/debug.
 
-Use this folder for user-facing extension controls, not for DOM scraping.
+## Firefox Dev Stability Notes
 
-### `src/shared/`
+The extension now includes reconnect hardening:
 
-Cross-cutting shared utilities.
+- popup sends background heartbeat before scan
+- popup pings content script before scan
+- auto reinjection via `chrome.scripting.executeScript` when receiver is missing
+- content watchdog cleans up stale widget context after extension reload
+- clearer recovery message and refresh fallback UX
 
-- `constants.js`: shared message types and provider constants
-- `mock-scan-result.js`: mock scan output used before the real API is connected
-- `storage.js`: shared `chrome.storage.local` helpers
-- `utils.js`: generic helpers
-
-Use this folder for code that is shared across popup, content scripts, and background.
-
-## Current Flow
-
-Current scan flow is:
-
-1. Content script detects provider page
-2. User opens a message
-3. User clicks `Analyze Email` in the floating widget
-4. Provider extractor reads the opened email from the DOM
-5. Extracted data is normalized
-6. Normalized payload is sent to the background service worker
-7. Background calls the mock/real API layer
-8. Result is shown in the widget
-9. Last payload/result pair is stored in `chrome.storage.local` for debugging
-
-The popup and debug view also show whether the latest result came from the mock preview flow or from a real API response.
+During development, after reloading the extension, refresh Gmail/Outlook tab once for the cleanest run.
 
 ## Debugging
 
-The last captured payload/result pair is stored under:
-
-- `tribunal_last_scan_debug`
-
-You can inspect it through extension storage or DevTools console:
+Latest payload/result:
 
 ```js
 chrome.storage.local.get('tribunal_last_scan_debug').then(console.log)
 ```
 
-Useful console snippets:
+History:
 
 ```js
-// latest payload + result
-chrome.storage.local.get('tribunal_last_scan_debug').then(console.log)
-
-// latest payload only
-chrome.storage.local.get('tribunal_last_scan_debug').then(({ tribunal_last_scan_debug }) => console.log(tribunal_last_scan_debug?.payload))
-
-// latest result only
-chrome.storage.local.get('tribunal_last_scan_debug').then(({ tribunal_last_scan_debug }) => console.log(tribunal_last_scan_debug?.result))
+chrome.storage.local.get('tribunal_history').then(console.log)
 ```
 
-The popup `Debug` tab now also surfaces the latest result source so it is obvious whether you are looking at a mock preview or a live API response.
+## Known Constraints
 
-## Current Internal Payload Shape
+- Extraction is DOM-based, so provider UI changes can break selectors.
+- Header quality is best-effort from DOM; not equivalent to raw RFC headers.
+- Very large newsletters with many redirects can increase scan time.
+- When sender email cannot be normalized, API scan is intentionally blocked with user-facing error.
 
-The extension currently produces an internal object with fields such as:
+## Recent Fixes Included
 
-- `subject`
-- `from`
-- `bodyHtml`
-- `bodyText`
-- `headers`
-- `links`
-- `attachments`
-- `metadata`
-
-This internal shape stays richer for local debugging. When a real API endpoint is enabled, the background layer trims it down to the backend contract before sending the request.
-
-## Implemented
-
-- Extension restructured into `src/` and `public/`
-- Manifest V3 build flow via Vite + CRXJS
-- Gmail page detection and Gmail message extraction
-- Outlook page detection and Outlook message extraction
-- Floating in-page widget
-- Widget position/minimize persistence
-- Popup settings toggle for floating widget enable/disable
-- Popup active-tab scan flow for Gmail and Outlook
-- Popup/debug result source visibility for mock vs API mode
-- Background request pipeline
-- Mock scan result generation
-- Trimmed backend request payload shaping in `api-client.js`
-- Storage-backed debug payload/result capture
-- Thorium / Chromium-based browser testing
-- Firefox-specific build output generation and runtime support
-- Gmail extraction refinement for newsletters / digests
-- Outlook extraction refinement for `outlook.cloud.microsoft`
-
-## Remaining
-
-- Replace mock scanning with the real API endpoint
-- Implement authentication if backend requests must be protected
-- Decide whether provider APIs are needed for reliable header retrieval
-- Validate against a wider variety of Gmail / Outlook message layouts
-- Complete final popup/widget UX parity checks
-
-## Current Limitations
-
-- Header extraction is not reliable through DOM scraping alone. `headers` will currently be empty or partial until provider API integration is added.
-- `bodyHtml` is intentionally retained for downstream scanning, so some emails still produce large / noisy HTML payloads.
-- Link extraction intentionally keeps visible message links, including tracking or newsletter links when they are part of the real email body.
-- Outlook recipient fields may still resolve to display names instead of email addresses, depending on what the Outlook DOM exposes.
-- Popup-level debug access still needs one final UX pass to make inspection more obvious.
-- Real API responses are only available after a backend endpoint is configured; otherwise scans stay in mock preview mode.
-
-## Current Testing Status
-
-- Tested on Thorium (Chromium-based)
-- Tested on Firefox via `dist-firefox`
-- Gmail extraction validated on transactional and digest-style emails
-- Outlook extraction validated on real Outlook mailbox pages
+- Outlook `From` cleanup and normalization improvements.
+- Popup nav state consistency after login/logout.
+- History hydration from backend reports endpoint.
+- Firefox reconnect/self-heal for `Receiving end does not exist`.
+- Floating widget scroll/action layout fixes for long findings.
