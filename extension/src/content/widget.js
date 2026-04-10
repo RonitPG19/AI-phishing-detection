@@ -149,6 +149,8 @@ function createPanelMarkup(provider) {
 
       .panel {
         position: relative;
+        display: flex;
+        flex-direction: column;
         width: 320px;
         max-width: min(320px, calc(100vw - 24px));
         max-height: calc(100vh - 48px);
@@ -218,9 +220,18 @@ function createPanelMarkup(provider) {
       .body {
         display: flex;
         flex-direction: column;
+        flex: 1 1 auto;
         min-height: 0;
         overflow-y: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
         padding: 20px;
+      }
+
+      .actions {
+        padding: 12px 20px 20px;
+        border-top: 1px solid #222222;
+        background: #0c0c0c;
       }
 
       .status-note {
@@ -254,7 +265,6 @@ function createPanelMarkup(provider) {
 
       .content {
         min-height: 0;
-        margin-bottom: 16px;
       }
 
       .results-summary {
@@ -339,16 +349,12 @@ function createPanelMarkup(provider) {
       }
 
       .section-body {
-        overflow: hidden;
-        max-height: 0;
-        opacity: 0;
-        transition: max-height 240ms cubic-bezier(0.16, 1, 0.3, 1), opacity 240ms cubic-bezier(0.16, 1, 0.3, 1), padding 240ms cubic-bezier(0.16, 1, 0.3, 1);
+        display: none;
         background: #0c0c0c;
       }
 
       .section-body.open {
-        max-height: 720px;
-        opacity: 1;
+        display: block;
         padding: 12px 16px 16px;
       }
 
@@ -413,15 +419,11 @@ function createPanelMarkup(provider) {
       }
 
       .issue-card-detail {
-        overflow: hidden;
-        max-height: 0;
-        opacity: 0;
-        transition: max-height 240ms cubic-bezier(0.16, 1, 0.3, 1), opacity 240ms cubic-bezier(0.16, 1, 0.3, 1);
+        display: none;
       }
 
       .issue-card-detail.open {
-        max-height: 420px;
-        opacity: 1;
+        display: block;
       }
 
       .issue-card-detail-inner {
@@ -495,6 +497,8 @@ function createPanelMarkup(provider) {
       <div class="body">
         <div class="status-note hidden" aria-live="polite"></div>
         <div class="content hidden"></div>
+      </div>
+      <div class="actions">
         <button class="btn-primary" type="button">Analyze Email</button>
       </div>
     </section>
