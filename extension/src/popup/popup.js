@@ -1,8 +1,10 @@
 import {
+  getApiConfig,
   clearScanHistory,
   getAuthSession,
   getLastScanDebug,
   getScanHistory,
+  saveScanHistory,
   saveWidgetPreferences
 } from '../shared/storage.js';
 import { RUNTIME_MESSAGES } from '../shared/constants.js';
@@ -59,6 +61,7 @@ const AUTH_FORM_MODE_KEY = 'tribunal_auth_form_mode';
 let currentPage = 'scan';
 let scanResults = null;
 let scanError = '';
+let scanRequiresRefresh = false;
 let isScanning = false;
 let scanStageIndex = 0;
 let scanStageVersion = 0;
@@ -75,8 +78,37 @@ let authDraft = {
   password: '',
   confirmPassword: ''
 };
+let remoteHistoryHydrated = false;
 
 const SCAN_STAGES = ['Extracting', 'Sending', 'Analyzing', 'Finalizing'];
+
+function isConnectionLostError(message = '') {
+  return /receiving end does not exist|could not establish connection|extension context invalidated|connection was lost/i.test(String(message));
+}
+
+async function wakeBackgroundServiceWorker() {
+  const retries = 3;
+  for (let attempt = 1; attempt <= retries; attempt += 1) {
+    const result = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: RUNTIME_MESSAGES.HEARTBEAT }, (response) => {
+        resolve({
+          response,
+          runtimeError: chrome.runtime.lastError?.message || ''
+        });
+      });
+    });
+
+    if (!result.runtimeError) {
+      return true;
+    }
+
+    if (attempt < retries) {
+      await new Promise((resolve) => window.setTimeout(resolve, 120));
+    }
+  }
+
+  return false;
+}
 
 function setScanStage(index) {
   scanStageIndex = Math.max(0, Math.min(index, SCAN_STAGES.length - 1));
@@ -189,6 +221,117 @@ function getResultSourceLabel(result) {
   }
 
   return 'Unknown Source';
+}
+
+function normalizeSeverity(value = '') {
+  const normalized = String(value || '').toLowerCase();
+  if (normalized === 'high' || normalized === 'critical') return 'high';
+  if (normalized === 'medium') return 'medium';
+  if (normalized === 'low') return 'low';
+  return 'low';
+}
+
+function threatFromScore(score = 0) {
+  const numeric = Number(score) || 0;
+  if (numeric >= 75) return 'critical';
+  if (numeric >= 55) return 'high';
+  if (numeric >= 30) return 'medium';
+  if (numeric >= 10) return 'low';
+  return 'safe';
+}
+
+function mapFindingToIssue(finding = {}) {
+  const target = String(finding.target || '').trim();
+  const description = String(finding.description || '').trim();
+  return {
+    severity: normalizeSeverity(finding.severity),
+    title: description || 'Flagged issue',
+    details: target ? `Target: ${target}` : '',
+    explanation: ''
+  };
+}
+
+function mapRemoteSections(sections = {}) {
+  return {
+    header: { label: 'Header', issues: (sections?.Header?.findings || []).map(mapFindingToIssue) },
+    subject: { label: 'Subject', issues: (sections?.Subject?.findings || []).map(mapFindingToIssue) },
+    body: { label: 'Body', issues: (sections?.Body?.findings || []).map(mapFindingToIssue) },
+    links: { label: 'Links', issues: (sections?.Links?.findings || []).map(mapFindingToIssue) },
+    attachments: { label: 'Attachments', issues: [] }
+  };
+}
+
+function mapRemoteReportToHistoryEntry(report = {}) {
+  const score = Number(report.overallRiskScore) || 0;
+  return {
+    source: 'api',
+    status: 'completed',
+    overallThreat: threatFromScore(score),
+    overallRiskScore: score,
+    issueCount: 0,
+    sections: mapRemoteSections(report.sections || {}),
+    timestamp: report.savedAt || new Date().toISOString(),
+    emailSubject: report.subject || 'Current message',
+    message: 'Loaded from server history.',
+    reportId: report.id || null,
+    headerInspectionResult: report.headerInspectionResult || null,
+    aiAnalysis: report.aiAnalysis || null
+  };
+}
+
+function mergeHistory(localHistory = [], remoteHistory = []) {
+  const merged = [...localHistory];
+  const seenKeys = new Set(
+    merged.map((entry) => entry.reportId || `${entry.timestamp || ''}::${entry.emailSubject || ''}`)
+  );
+
+  remoteHistory.forEach((entry) => {
+    const key = entry.reportId || `${entry.timestamp || ''}::${entry.emailSubject || ''}`;
+    if (!seenKeys.has(key)) {
+      merged.push(entry);
+      seenKeys.add(key);
+    }
+  });
+
+  merged.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+  return merged.slice(0, 50);
+}
+
+async function hydrateRemoteHistoryIfNeeded() {
+  if (remoteHistoryHydrated || !hasAuthSession()) {
+    return;
+  }
+
+  remoteHistoryHydrated = true;
+
+  try {
+    const config = await getApiConfig();
+    if (!config?.enabled || !config?.endpoint) {
+      return;
+    }
+
+    const reportsEndpoint = String(config.endpoint).replace(/\/scan\/?$/, '/reports?limit=50');
+    const response = await fetch(reportsEndpoint, { method: 'GET', headers: { Accept: 'application/json' } });
+    if (!response.ok) {
+      return;
+    }
+
+    const payload = await response.json();
+    const remoteReports = Array.isArray(payload) ? payload : [];
+    const mappedRemote = remoteReports
+      .filter((report) => String(report?.type || '').toLowerCase() !== 'link_scan')
+      .map(mapRemoteReportToHistoryEntry);
+
+    if (!mappedRemote.length) {
+      return;
+    }
+
+    const local = await getScanHistory();
+    const merged = mergeHistory(local, mappedRemote);
+    await saveScanHistory(merged);
+  } catch {
+    // Best-effort hydration; local history continues to work even when server history fetch fails.
+  }
 }
 
 function getAuthDisplayName() {
@@ -432,7 +575,7 @@ function renderScanPage() {
   }
 
   if (scanError) {
-    container.innerHTML = `<div class="error-state page-enter"><i data-icon="shield" class="empty-state-icon"></i><p class="error-state-msg">${escapeHtml(scanError)}</p><button class="btn-primary" id="scan-btn" ${!settings.enabled ? 'disabled' : ''}><i data-icon="scan-search"></i> Try Again</button></div>`;
+    container.innerHTML = `<div class="error-state page-enter"><i data-icon="shield" class="empty-state-icon"></i><p class="error-state-msg">${escapeHtml(scanError)}</p><button class="btn-primary" id="scan-btn" ${!settings.enabled ? 'disabled' : ''}><i data-icon="scan-search"></i> Try Again</button>${scanRequiresRefresh ? '<button class="btn-secondary" id="refresh-mail-tab-btn"><i data-icon="rotate-ccw"></i> Refresh Mail Tab</button>' : ''}</div>`;
     injectIcons(container);
     return;
   }
@@ -450,6 +593,7 @@ async function renderHistoryPage() {
     return;
   }
 
+  await hydrateRemoteHistoryIfNeeded();
   const history = await getScanHistory();
 
   if (historyDetailIndex !== null && history[historyDetailIndex]) {
@@ -538,7 +682,104 @@ function togglePasswordVisibility() {
   renderCurrentPage();
 }
 
+function getProviderFromTabUrl(tabUrl = '') {
+  const url = String(tabUrl || '');
+  if (url.startsWith('https://mail.google.com/')) {
+    return 'gmail';
+  }
+  if (
+    url.startsWith('https://outlook.cloud.microsoft/') ||
+    url.startsWith('https://outlook.live.com/') ||
+    url.startsWith('https://outlook.office.com/') ||
+    url.startsWith('https://outlook.office365.com/')
+  ) {
+    return 'outlook';
+  }
+  return '';
+}
+
+function getContentScriptFilesForProvider(provider) {
+  const manifest = chrome.runtime.getManifest();
+  const contentScripts = Array.isArray(manifest?.content_scripts) ? manifest.content_scripts : [];
+
+  if (provider === 'gmail') {
+    const entry = contentScripts.find((script) =>
+      Array.isArray(script.matches) && script.matches.some((match) => match.includes('mail.google.com'))
+    );
+    return Array.isArray(entry?.js) ? entry.js : [];
+  }
+
+  if (provider === 'outlook') {
+    const entry = contentScripts.find((script) =>
+      Array.isArray(script.matches) && script.matches.some((match) => match.includes('outlook.'))
+    );
+    return Array.isArray(entry?.js) ? entry.js : [];
+  }
+
+  return [];
+}
+
+async function sendMessageToTab(tabId, message) {
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tabId, message, (response) => {
+      resolve({
+        response,
+        runtimeError: chrome.runtime.lastError?.message || ''
+      });
+    });
+  });
+}
+
+async function injectProviderContentScript(tabId, provider) {
+  if (!chrome.scripting?.executeScript) {
+    return false;
+  }
+
+  const files = getContentScriptFilesForProvider(provider);
+  if (!files.length) {
+    return false;
+  }
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureTabContentReceiver(tabId, tabUrl) {
+  const provider = getProviderFromTabUrl(tabUrl);
+  if (!provider) {
+    return false;
+  }
+
+  // First, attempt a silent readiness ping.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const ping = await sendMessageToTab(tabId, { type: RUNTIME_MESSAGES.PING_CONTENT });
+    if (!ping.runtimeError) {
+      return true;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 180));
+  }
+
+  // If receiver is missing, attempt to inject the provider content script once.
+  const injected = await injectProviderContentScript(tabId, provider);
+  if (!injected) {
+    return false;
+  }
+
+  await new Promise((resolve) => window.setTimeout(resolve, 220));
+  const pingAfterInject = await sendMessageToTab(tabId, { type: RUNTIME_MESSAGES.PING_CONTENT });
+  return !pingAfterInject.runtimeError;
+}
+
 async function requestActiveScan() {
+  await wakeBackgroundServiceWorker();
+
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
   if (!tab?.id) {
@@ -551,28 +792,55 @@ async function requestActiveScan() {
     throw new Error('Open Gmail or Outlook in the active tab, then run the scan again.');
   }
 
+  const receiverReady = await ensureTabContentReceiver(tab.id, tabUrl);
+  if (!receiverReady) {
+    throw new Error('Mail page is not ready yet. Refresh the Gmail/Outlook tab once, then try again.');
+  }
+
   await advanceScanStage(1, 200);
 
-  return new Promise((resolve, reject) => {
-    chrome.tabs.sendMessage(tab.id, { type: RUNTIME_MESSAGES.REQUEST_ACTIVE_SCAN }, (response) => {
-      if (chrome.runtime.lastError) {
-        reject(new Error('Could not reach the mail page. Refresh the tab and try again.'));
-        return;
-      }
+  // Firefox can briefly report "Receiving end does not exist" while the content script
+  // is still attaching after tab updates. Retry a few times before failing hard.
+  const maxAttempts = 5;
+  const retryDelayMs = 450;
 
-      if (!response) {
-        reject(new Error('No scan response was returned from the active tab.'));
-        return;
-      }
-
-      if (response.ok === false) {
-        reject(new Error(response.error || 'The current message could not be scanned.'));
-        return;
-      }
-
-      resolve(response.result || response);
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const result = await new Promise((resolve) => {
+      chrome.tabs.sendMessage(tab.id, { type: RUNTIME_MESSAGES.REQUEST_ACTIVE_SCAN }, (response) => {
+        const runtimeError = chrome.runtime.lastError?.message || '';
+        if (runtimeError) {
+          resolve({ ok: false, runtimeError });
+          return;
+        }
+        resolve({ ok: true, response });
+      });
     });
-  });
+
+    if (!result.ok) {
+      const isNoReceiver = /Receiving end does not exist/i.test(result.runtimeError);
+      if (isNoReceiver && attempt < maxAttempts) {
+        await new Promise((resolve) => window.setTimeout(resolve, retryDelayMs));
+        continue;
+      }
+      throw new Error('Mail tab connection was lost. Refresh the mail tab once, then try scan again.');
+    }
+
+    if (!result.response) {
+      if (attempt < maxAttempts) {
+        await new Promise((resolve) => window.setTimeout(resolve, retryDelayMs));
+        continue;
+      }
+      throw new Error('No scan response was returned from the active tab.');
+    }
+
+    if (result.response.ok === false) {
+      throw new Error(result.response.error || 'The current message could not be scanned.');
+    }
+
+    return result.response.result || result.response;
+  }
+
+  throw new Error('Mail tab connection was lost. Please refresh the mail tab and try again.');
 }
 
 async function startScan() {
@@ -589,6 +857,7 @@ async function startScan() {
   setScanStage(0);
   scanResults = null;
   scanError = '';
+  scanRequiresRefresh = false;
   renderScanPage();
 
   try {
@@ -599,12 +868,28 @@ async function startScan() {
     scanResults = result;
   } catch (error) {
     scanError = error.message || 'Unable to scan the current message.';
+    scanRequiresRefresh = isConnectionLostError(scanError);
   } finally {
     isScanning = false;
     scanStageVersion += 1;
     scanStageIndex = 0;
     renderScanPage();
   }
+}
+
+async function refreshActiveMailTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) {
+    scanError = 'No active mail tab found. Open Gmail or Outlook and try again.';
+    scanRequiresRefresh = false;
+    renderScanPage();
+    return;
+  }
+
+  await chrome.tabs.reload(tab.id);
+  scanError = 'Mail tab refreshed. Wait for the message to load, then tap Try Again.';
+  scanRequiresRefresh = false;
+  renderScanPage();
 }
 
 async function handleAuthSubmit() {
@@ -657,7 +942,7 @@ async function handleAuthSubmit() {
       await loginWithFirebaseAndFlask({ email, password });
       await syncAuthState();
       authNotice = 'Logged in successfully.';
-      currentPage = 'scan';
+      navigateTo('scan');
       authDraft = { email: '', password: '', confirmPassword: '' };
     }
   } catch (error) {
@@ -677,8 +962,9 @@ async function handleLogout() {
   try {
     await logoutFromFirebaseAndFlask();
     await syncAuthState();
+    remoteHistoryHydrated = false;
     authNotice = 'Logged out locally.';
-    currentPage = 'auth';
+    navigateTo('profile');
     authDraft = { email: '', password: '', confirmPassword: '' };
   } catch (error) {
     authError = error.message || 'Unable to log out right now.';
@@ -698,7 +984,7 @@ async function handleGoogleAuth() {
     await loginWithGoogleAndFlask();
     await syncAuthState();
     authNotice = 'Logged in with Google successfully.';
-    currentPage = 'scan';
+    navigateTo('scan');
     authDraft = { email: '', password: '', confirmPassword: '' };
   } catch (error) {
     authError = error.message || 'Unable to continue with Google right now.';
@@ -789,6 +1075,11 @@ document.addEventListener('click', async (event) => {
     return;
   }
 
+  if (event.target.closest('#refresh-mail-tab-btn')) {
+    refreshActiveMailTab();
+    return;
+  }
+
   if (event.target.closest('#open-auth-btn')) {
     navigateTo('profile');
     return;
@@ -854,6 +1145,7 @@ document.addEventListener('click', async (event) => {
 
   if (event.target.closest('#clear-history-btn')) {
     await clearScanHistory();
+    remoteHistoryHydrated = false;
     historyDetailIndex = null;
     await renderHistoryPage();
     return;

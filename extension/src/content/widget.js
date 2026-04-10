@@ -151,6 +151,7 @@ function createPanelMarkup(provider) {
         position: relative;
         width: 320px;
         max-width: min(320px, calc(100vw - 24px));
+        max-height: calc(100vh - 48px);
         background: #0c0c0c;
         color: #ececec;
         border: 1px solid #222222;
@@ -215,6 +216,10 @@ function createPanelMarkup(provider) {
       }
 
       .body {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow-y: auto;
         padding: 20px;
       }
 
@@ -248,6 +253,7 @@ function createPanelMarkup(provider) {
       }
 
       .content {
+        min-height: 0;
         margin-bottom: 16px;
       }
 
@@ -563,6 +569,7 @@ export async function createFloatingWidget({ provider, onScan }) {
   panelHost.style.right = `${getPanelPosition().right}px`;
   panelHost.style.bottom = `${getPanelPosition().bottom}px`;
   panelHost.style.maxWidth = 'calc(100vw - 24px)';
+  panelHost.style.maxHeight = 'calc(100vh - 48px)';
   panelHost.style.zIndex = '2147483647';
   panelHost.style.pointerEvents = 'auto';
 

@@ -5,6 +5,8 @@ export const PROVIDERS = {
 
 // Message names shared between popup, content scripts, and the background service worker.
 export const RUNTIME_MESSAGES = {
+  HEARTBEAT: 'heartbeat',
+  PING_CONTENT: 'ping-content',
   REQUEST_ACTIVE_SCAN: 'request-active-scan',
   SCAN_EMAIL: 'scan-email'
 };

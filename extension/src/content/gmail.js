@@ -4,6 +4,11 @@ import { createFloatingWidget, removeFloatingWidget, WIDGET_HOST_ID } from './wi
 import { PROVIDERS, RUNTIME_MESSAGES } from '../shared/constants.js';
 import { getAuthSession, getWidgetPreferences } from '../shared/storage.js';
 
+function isExtensionContextInvalid(error) {
+  const message = String(error?.message || '');
+  return /extension context invalidated|receiving end does not exist|could not establish connection/i.test(message);
+}
+
 function buildNormalizedGmailPayload() {
   // Gmail-specific selectors live in the extractor; keep this file focused on orchestration.
   const extracted = extractGmailEmailDetails();
@@ -13,6 +18,20 @@ function buildNormalizedGmailPayload() {
   }
 
   return normalizeEmailPayload(PROVIDERS.GMAIL, extracted);
+}
+
+async function sendScanToBackground(payload) {
+  try {
+    return await chrome.runtime.sendMessage({
+      type: RUNTIME_MESSAGES.SCAN_EMAIL,
+      payload
+    });
+  } catch (error) {
+    if (isExtensionContextInvalid(error)) {
+      throw new Error('Extension was reloaded. Refresh Gmail tab once and try again.');
+    }
+    throw error;
+  }
 }
 
 async function performGmailScan() {
@@ -32,10 +51,7 @@ async function performGmailScan() {
   }
 
   // Network calls are delegated to the background script so page code stays provider-focused.
-  return chrome.runtime.sendMessage({
-    type: RUNTIME_MESSAGES.SCAN_EMAIL,
-    payload
-  });
+  return sendScanToBackground(payload);
 }
 
 async function mountWidgetIfEnabled() {
@@ -81,16 +97,41 @@ function scheduleWidgetRecovery() {
 
   window.addEventListener('focus', requestMount);
   window.addEventListener('popstate', requestMount);
-  window.setInterval(requestMount, 1500);
+  const intervalId = window.setInterval(requestMount, 1500);
+
+  return () => {
+    observer.disconnect();
+    window.removeEventListener('focus', requestMount);
+    window.removeEventListener('popstate', requestMount);
+    window.clearInterval(intervalId);
+    removeFloatingWidget();
+  };
+}
+
+function startContextWatchdog(cleanup) {
+  const intervalId = window.setInterval(() => {
+    if (chrome.runtime?.id) {
+      return;
+    }
+
+    window.clearInterval(intervalId);
+    cleanup?.();
+  }, 1200);
 }
 
 console.debug('[Tribunal] Gmail content script loaded');
 
 mountWidgetIfEnabled();
-scheduleWidgetRecovery();
+const stopWidgetRecovery = scheduleWidgetRecovery();
+startContextWatchdog(stopWidgetRecovery);
 
 // Allow the popup to trigger a real DOM-backed scan in the active Gmail tab.
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === RUNTIME_MESSAGES.PING_CONTENT) {
+    sendResponse({ ok: true, provider: PROVIDERS.GMAIL });
+    return false;
+  }
+
   if (message?.type !== RUNTIME_MESSAGES.REQUEST_ACTIVE_SCAN) {
     return false;
   }

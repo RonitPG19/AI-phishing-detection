@@ -155,8 +155,11 @@ function getVisibleBodyCandidates(root = document) {
   return Array.from(
     root.querySelectorAll([
       '[aria-label*="Message body"]',
+      '[aria-label*="message body"]',
       '[aria-label*="Reading pane"] [role="document"]',
       '[role="document"]',
+      '[data-testid="message-body"]',
+      '[data-testid="MailMessageBody"]',
       '[data-app-section="MailReadCompose"] div[dir="ltr"]',
       '[data-app-section="MailReadCompose"] [contenteditable="false"]',
       '[data-app-section="MailReadCompose"] [data-contents="true"]'
@@ -469,11 +472,11 @@ export function extractOutlookEmailDetails(root = document) {
   const to = [...new Set(extractRecipientAddresses(messageRoot, 'To', bodyNode).filter((value) => value !== from))];
   const cc = [...new Set(extractRecipientAddresses(messageRoot, 'Cc', bodyNode).filter((value) => value !== from && !to.includes(value)))];
 
-  const subject = getSubjectText(subjectNode);
-  const bodyText = getReadableText(bodyNode);
+  const subject = getSubjectText(subjectNode) || '(no subject)';
+  const bodyText = getReadableText(bodyNode) || getReadableText(messageRoot);
 
-  if (!subject || !bodyText) {
-    // Fail closed so downstream code does not scan Outlook page layout fragments.
+  if (!bodyText) {
+    // If even the message root has no readable text, treat this as "no opened message".
     return null;
   }
 
