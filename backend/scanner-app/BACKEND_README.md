@@ -596,7 +596,56 @@ Firebase is only initialized when `firebase.enabled=true` in application propert
 
 ### POST `/api/phishing/scan`
 
-**Request Body:**
+Runs the full phishing scan pipeline and returns the computed report.
+
+**HTTP requirements**
+
+| Item | Value |
+|------|-------|
+| Method | `POST` |
+| Path | `/api/phishing/scan` |
+| `Content-Type` | `application/json` |
+| Auth | None (as currently implemented) |
+
+**Request body keys (`EmailRequest`)**
+
+| Key | Required | Type | Constraints / Validation | Example | Notes |
+|-----|----------|------|--------------------------|---------|-------|
+| `from` | Yes | `string` | Must be non-empty and a valid email format (`@NotBlank`, `@Email`) | `"alerts@service.com"` | Send plain email address only. |
+| `subject` | No | `string` | Max length `500` (`@Size(max=500)`) | `"Urgent: Verify your account"` | If `null`, backend uses `"(no subject)"`. |
+| `bodyHtml` | No | `string` | Max length `500000` (`@Size(max=500000)`) | `"<html><body>...</body></html>"` | Preferred when HTML email is available. |
+| `bodyText` | No | `string` | Max length `500000` (`@Size(max=500000)`) | `"Click https://example.com"` | Used when HTML is absent. |
+| `headers` | No | `object` (`Map<String, List<String>>`) | JSON object where each key maps to an array of strings | See table below | Analyzer reads specific header names listed below. |
+
+**`headers` object: accepted input headers in this system**
+
+The backend can receive any header key, but only these keys are currently consumed by analysis logic:
+
+| Header key in JSON | Type | Used for | Required for that check | Expected value shape |
+|--------------------|------|----------|-------------------------|----------------------|
+| `Authentication-Results` | `string[]` | SPF/DKIM/DMARC failure detection | Yes (for SPF/DKIM/DMARC checks) | Example item: `"mx.google.com; spf=fail smtp.mailfrom=...; dkim=fail; dmarc=fail"` |
+| `From` | `string[]` | Display-name brand impersonation check | Yes (for display-name check) | Example item: `"PayPal Security <alerts@paypal.com>"` |
+| `Reply-To` | `string[]` | Reply-To vs From mismatch check | Yes (for reply mismatch check) | Example item: `"support@other-domain.com"` |
+| `Return-Path` | `string[]` | Return-Path vs From mismatch check | Yes (for return-path mismatch check) | Example item: `"<bounce@mailer.other-domain.com>"` |
+
+**Important behavior notes for `headers`**
+
+- Header keys are looked up using exact names (for example `Authentication-Results`, not `authentication-results`).
+- For `From`, `Reply-To`, and `Return-Path`, the first value in the array is used.
+- For `Authentication-Results`, all provided values are scanned.
+- SPF/DKIM/DMARC detection currently checks for lowercase substrings `spf=fail`, `dkim=fail`, and `dmarc=fail`.
+- Unknown header keys are accepted but ignored by scanner logic.
+
+**Minimal valid request**
+
+```json
+{
+  "from": "sender@example.com"
+}
+```
+
+**Recommended full request**
+
 ```json
 {
   "from": "sender@example.com",
@@ -604,46 +653,105 @@ Firebase is only initialized when `firebase.enabled=true` in application propert
   "bodyHtml": "<html><body><a href='https://evil.com'>Click here</a></body></html>",
   "bodyText": "Please verify your account at https://evil.com",
   "headers": {
-    "Authentication-Results": ["spf=pass; dkim=fail; dmarc=fail"],
+    "Authentication-Results": [
+      "mx.google.com; spf=pass smtp.mailfrom=sender@example.com; dkim=fail; dmarc=fail"
+    ],
     "From": ["PayPal <sender@example.com>"],
-    "Reply-To": ["different@attacker.com"]
+    "Reply-To": ["different@attacker.com"],
+    "Return-Path": ["<bounce@attacker-mail.com>"]
   }
 }
 ```
 
-**Response:**
+**Validation error response (`400`)**
+
+```json
+{
+  "status": 400,
+  "error": "Validation failed",
+  "fields": {
+    "from": "Sender (from) must be a valid email address"
+  }
+}
+```
+
+**Success response (`200`) key map**
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `subject` | `string` | Subject used for scanning (or fallback value). |
+| `sender` | `string` | Sender copied from request `from`. |
+| `urlCount` | `number` | Count of unique analyzed URLs after extraction + redirect resolution. |
+| `sections` | `object` | Categorized findings grouped into `Header`, `Subject`, `Body`, `Links`. |
+| `headerInspectionResult` | `object` | Boolean flags: `spfFail`, `dkimFail`, `dmarcFail`, `displayNameMismatch`, `replyToMismatch`, `returnPathMismatch`. |
+| `overallRiskScore` | `number` | Final score in range `0..100`. |
+| `reportId` | `string \| null` | Firestore document ID if persistence succeeds; otherwise `null`. |
+| `aiAnalysis` | `object \| null` | Gemini analysis output when AI is available; otherwise `null`. |
+
+**Success response example**
+
 ```json
 {
   "subject": "Urgent: Verify Your Account",
   "sender": "sender@example.com",
   "urlCount": 1,
-  "findings": [
-    {
-      "target": "DKIM",
-      "description": "DKIM check failed",
-      "severity": "MEDIUM",
-      "scoreContribution": 15
+  "sections": {
+    "Header": {
+      "findings": [
+        {
+          "target": "DKIM",
+          "description": "DKIM check failed",
+          "severity": "MEDIUM",
+          "scoreContribution": 15
+        }
+      ],
+      "scoreBreakdown": {
+        "auth": 15,
+        "social": 5
+      }
     },
-    {
-      "target": "[AI] Urgency Language",
-      "description": "Email pressures user to act immediately to avoid account suspension",
-      "severity": "HIGH",
-      "scoreContribution": 25
+    "Subject": {
+      "findings": [],
+      "scoreBreakdown": {}
+    },
+    "Body": {
+      "findings": [
+        {
+          "target": "[AI] Urgency Language",
+          "description": "Email pressures user to act immediately to avoid account suspension",
+          "severity": "HIGH",
+          "scoreContribution": 25
+        }
+      ],
+      "scoreBreakdown": {
+        "ai": 15
+      }
+    },
+    "Links": {
+      "findings": [],
+      "scoreBreakdown": {}
     }
-  ],
+  },
   "headerInspectionResult": {
     "spfFail": false,
     "dkimFail": true,
     "dmarcFail": true,
     "displayNameMismatch": false,
-    "replyToMismatch": true
+    "replyToMismatch": true,
+    "returnPathMismatch": false
   },
   "overallRiskScore": 62,
   "reportId": "abc123def456",
   "aiAnalysis": {
     "phishingLikelihood": "HIGH",
     "summary": "Email shows strong indicators of credential harvesting phishing.",
-    "indicators": [ ... ]
+    "indicators": [
+      {
+        "indicator": "Urgency Language",
+        "description": "Email pressures user to act quickly to avoid account suspension",
+        "severity": "HIGH"
+      }
+    ]
   }
 }
 ```

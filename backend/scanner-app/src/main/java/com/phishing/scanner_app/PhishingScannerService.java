@@ -89,7 +89,10 @@ public class PhishingScannerService {
 
     public EmailScanReport scanEmail(EmailRequest request, String safeBrowsingApiKey) {
         String subject = defaultString(request.getSubject(), "(no subject)");
-        String sender = request.getFrom();
+        String sender = defaultString(request.getFrom(), "(unknown)");
+        boolean hasBody = request.hasBodyContent();
+
+        // ── Collect URLs from body content ──
         EmailContent emailContent = new EmailContent();
         if (request.getBodyHtml() != null) {
             emailContent.appendHtml(request.getBodyHtml());
@@ -98,10 +101,20 @@ public class PhishingScannerService {
             emailContent.appendText(request.getBodyText());
         }
         Set<String> urls = extractUrlsFromContent(emailContent);
+
+        // ── Merge URLs from the explicit "links" field ──
+        if (request.hasLinks()) {
+            for (EmailRequest.LinkItem link : request.getLinks()) {
+                String href = link.getHref();
+                if (href != null && (href.startsWith("http://") || href.startsWith("https://"))) {
+                    urls.add(href);
+                }
+            }
+        }
+
         List<RiskFinding> findings = new ArrayList<>();
 
         // ── Redirect chain resolution ──
-        // Resolve shortened/redirected URLs and add final destinations to the URL set
         Set<String> resolvedUrls = new LinkedHashSet<>(urls);
         for (String url : urls) {
             RedirectChainResolver.RedirectChain chain = redirectChainResolver.resolve(url);
@@ -111,14 +124,12 @@ public class PhishingScannerService {
                 String startDomain = extractDomainFromUrl(url);
                 String finalDomain = extractDomainFromUrl(chain.finalUrl());
 
-                // Flag long redirect chains (3+ hops)
                 if (chain.hopCount() >= 3) {
                     findings.add(new RiskFinding(url,
                         "URL has a long redirect chain (" + chain.hopCount() + " hops) ending at " + chain.finalUrl(),
                         Severity.MEDIUM));
                 }
 
-                // Flag domain change through redirect
                 if (!startDomain.isEmpty() && !finalDomain.isEmpty()
                     && !extractRootDomain(startDomain).equals(extractRootDomain(finalDomain))) {
                     findings.add(new RiskFinding(url,
@@ -126,7 +137,6 @@ public class PhishingScannerService {
                         Severity.LOW));
                 }
 
-                // Flag use of shortener services
                 if (RedirectChainResolver.isKnownShortener(startDomain)) {
                     findings.add(new RiskFinding(url,
                         "URL uses shortener (" + startDomain + "), real destination: " + chain.finalUrl(),
@@ -137,10 +147,15 @@ public class PhishingScannerService {
 
         Set<String> allUrls = resolvedUrls;
 
-        HeaderInspectionResult headerInspectionResult = inspectAuthenticationHeaders(request, findings);
-        headerInspectionResult.displayNameMismatch = detectDisplayNameMismatch(request, findings);
-        headerInspectionResult.replyToMismatch = detectReplyToMismatch(request, findings);
+        // ── Header inspection (only when body content is present) ──
+        HeaderInspectionResult headerInspectionResult = new HeaderInspectionResult();
+        if (hasBody) {
+            headerInspectionResult = inspectAuthenticationHeaders(request, findings);
+            headerInspectionResult.displayNameMismatch = detectDisplayNameMismatch(request, findings);
+            headerInspectionResult.replyToMismatch = detectReplyToMismatch(request, findings);
+        }
 
+        // ── Link threat checks (always performed) ──
         checkThreatIntelBlacklist(allUrls, findings);
         checkGoogleSafeBrowsing(allUrls, safeBrowsingApiKey, findings);
 
@@ -151,31 +166,172 @@ public class PhishingScannerService {
         inspectTyposquatting(urlDomainMap.values(), trustedDomains, findings);
         inspectSslCertificates(allUrls, domainAgeByRootDomain, findings);
 
-        // ── AI-powered email body analysis ──
-        String bodyForAnalysis = emailContent.hasHtml()
-            ? org.jsoup.Jsoup.parse(emailContent.getHtml()).text()
-            : emailContent.getText();
-        GeminiEmailAnalyzer.GeminiAnalysisResult aiAnalysis =
-            geminiEmailAnalyzer.analyze(subject, sender, bodyForAnalysis);
+        // ── AI-powered email body analysis (only when body content is present) ──
+        GeminiEmailAnalyzer.GeminiAnalysisResult aiAnalysis = null;
+        if (hasBody) {
+            String bodyForAnalysis = emailContent.hasHtml()
+                ? org.jsoup.Jsoup.parse(emailContent.getHtml()).text()
+                : emailContent.getText();
+            aiAnalysis = geminiEmailAnalyzer.analyze(subject, sender, bodyForAnalysis);
 
-        if (aiAnalysis != null && aiAnalysis.indicators != null) {
-            for (GeminiEmailAnalyzer.PhishingIndicator indicator : aiAnalysis.indicators) {
-                Severity severity = parseAiSeverity(indicator.severity);
-                findings.add(new RiskFinding(
-                    "[AI] " + indicator.indicator,
-                    indicator.description,
-                    severity
-                ));
+            if (aiAnalysis != null && aiAnalysis.indicators != null) {
+                for (GeminiEmailAnalyzer.PhishingIndicator indicator : aiAnalysis.indicators) {
+                    Severity severity = parseAiSeverity(indicator.severity);
+                    findings.add(new RiskFinding(
+                        "[AI] " + indicator.indicator,
+                        indicator.description,
+                        severity
+                    ));
+                }
             }
         }
 
-        String senderRootDomain = extractRootDomain(extractFromDomain(sender));
-        boolean senderWhitelisted = whitelistManager.isWhitelistedDomain(senderRootDomain);
-        RiskScoreResult riskScoreResult = calculateRiskScore(findings, headerInspectionResult, senderWhitelisted);
-        
+        // ── Risk scoring ──
+        RiskScoreResult riskScoreResult;
+        if (hasBody) {
+            String senderRootDomain = extractRootDomain(extractFromDomain(sender));
+            boolean senderWhitelisted = whitelistManager.isWhitelistedDomain(senderRootDomain);
+            riskScoreResult = calculateRiskScore(findings, headerInspectionResult, senderWhitelisted);
+        } else {
+            // Link-only mode: use simplified scoring without header/auth/AI components
+            riskScoreResult = calculateLinkOnlyRiskScore(findings);
+        }
+
         CategorizedFindings categorized = categorizeResults(findings, riskScoreResult.scoreBreakdown());
-        
+
         return new EmailScanReport(subject, sender, allUrls.size(), categorized, headerInspectionResult, riskScoreResult.overallScore(), null, aiAnalysis);
+    }
+
+    /**
+     * Scan a list of URLs for phishing indicators.
+     * This is a link-only scan — no email headers, body, or AI analysis.
+     */
+    public LinkScanReport scanLinks(List<String> urls, String safeBrowsingApiKey) {
+        List<RiskFinding> findings = new ArrayList<>();
+
+        Set<String> urlSet = new LinkedHashSet<>(urls);
+
+        // ── Redirect chain resolution ──
+        Set<String> resolvedUrls = new LinkedHashSet<>(urlSet);
+        for (String url : urlSet) {
+            RedirectChainResolver.RedirectChain chain = redirectChainResolver.resolve(url);
+            if (chain.wasRedirected()) {
+                resolvedUrls.add(chain.finalUrl());
+
+                String startDomain = extractDomainFromUrl(url);
+                String finalDomain = extractDomainFromUrl(chain.finalUrl());
+
+                if (chain.hopCount() >= 3) {
+                    findings.add(new RiskFinding(url,
+                        "URL has a long redirect chain (" + chain.hopCount() + " hops) ending at " + chain.finalUrl(),
+                        Severity.MEDIUM));
+                }
+
+                if (!startDomain.isEmpty() && !finalDomain.isEmpty()
+                    && !extractRootDomain(startDomain).equals(extractRootDomain(finalDomain))) {
+                    findings.add(new RiskFinding(url,
+                        "URL redirects to a different domain: " + startDomain + " → " + finalDomain,
+                        Severity.LOW));
+                }
+
+                if (RedirectChainResolver.isKnownShortener(startDomain)) {
+                    findings.add(new RiskFinding(url,
+                        "URL uses shortener (" + startDomain + "), real destination: " + chain.finalUrl(),
+                        Severity.LOW));
+                }
+            }
+        }
+
+        Set<String> allUrls = resolvedUrls;
+
+        // ── Threat intelligence checks ──
+        checkThreatIntelBlacklist(allUrls, findings);
+        checkGoogleSafeBrowsing(allUrls, safeBrowsingApiKey, findings);
+
+        // ── Domain inspections ──
+        Map<String, String> urlDomainMap = buildUrlDomainMap(allUrls);
+        inspectHomographDomains(urlDomainMap, trustedDomains, findings);
+
+        Map<String, Integer> domainAgeByRootDomain = inspectDomainAges(urlDomainMap.values(), findings);
+        inspectTyposquatting(urlDomainMap.values(), trustedDomains, findings);
+        inspectSslCertificates(allUrls, domainAgeByRootDomain, findings);
+
+        // ── Calculate risk score (link-only — no header/auth/AI components) ──
+        RiskScoreResult riskScoreResult = calculateLinkOnlyRiskScore(findings);
+
+        int score = riskScoreResult.overallScore();
+        String verdict = LinkScanReport.verdictFromScore(score);
+
+        return new LinkScanReport(
+            allUrls.size(),
+            new ArrayList<>(allUrls),
+            score,
+            verdict,
+            findings,
+            riskScoreResult.scoreBreakdown(),
+            null
+        );
+    }
+
+    /**
+     * Simplified risk scoring for link-only scans.
+     * Only considers link-relevant categories: blacklist, threat intel, domain, SSL, URL behavior.
+     */
+    private static RiskScoreResult calculateLinkOnlyRiskScore(List<RiskFinding> findings) {
+        int blacklistScore = 0;
+        int threatScore = 0;
+        int domainScore = 0;
+        int sslScore = 0;
+        int urlScore = 0;
+
+        boolean hasBlacklist = false;
+        boolean hasThreatIntel = false;
+
+        for (RiskFinding f : findings) {
+            String desc = f.description().toLowerCase();
+            int score = f.scoreContribution();
+
+            if (desc.contains("blacklisted") || desc.contains("blacklist")) {
+                blacklistScore += score;
+                hasBlacklist = true;
+            } else if (desc.contains("safe browsing")) {
+                threatScore += score;
+                hasThreatIntel = true;
+            } else if (desc.contains("domain is only") || desc.contains("typosquatting") || desc.contains("homograph") || desc.contains("impersonate")) {
+                domainScore += score;
+            } else if (desc.contains("ssl") || desc.contains("certificate") || desc.contains("does not resolve")) {
+                sslScore += score;
+            } else if (desc.contains("redirect") || desc.contains("shortener")) {
+                urlScore += score;
+            } else {
+                // Default: categorize as domain/url
+                domainScore += score;
+            }
+        }
+
+        // Apply caps
+        threatScore = Math.min(threatScore, 30);
+        domainScore = Math.min(domainScore, 25);
+        sslScore = Math.min(sslScore, 15);
+        urlScore = Math.min(urlScore, 10);
+
+        int total = blacklistScore + threatScore + domainScore + sslScore + urlScore;
+
+        Map<String, Integer> breakdown = new LinkedHashMap<>();
+        if (blacklistScore > 0) breakdown.put("blacklist", blacklistScore);
+        if (threatScore > 0)    breakdown.put("threatIntel", threatScore);
+        if (domainScore > 0)    breakdown.put("domainAge", domainScore);
+        if (sslScore > 0)       breakdown.put("ssl", sslScore);
+        if (urlScore > 0)       breakdown.put("url", urlScore);
+
+        // Hard override: if both blacklist and threat intel fire, it's 100% malicious
+        if (hasBlacklist && hasThreatIntel) {
+            breakdown.put("hardOverride", 100);
+            return new RiskScoreResult(100, breakdown);
+        }
+
+        total = Math.max(0, Math.min(100, total));
+        return new RiskScoreResult(total, breakdown);
     }
 
     private static Severity parseAiSeverity(String severity) {
@@ -196,7 +352,7 @@ public class PhishingScannerService {
     }
 
     private static Set<String> extractUrlsFromHtml(String html) {
-        if (isBlank(html)) return Collections.emptySet();
+        if (isBlank(html)) return new LinkedHashSet<>();
         Set<String> urls = new LinkedHashSet<>();
         Document doc = Jsoup.parse(html);
         for (Element link : doc.select("a[href]")) {
@@ -209,7 +365,7 @@ public class PhishingScannerService {
     }
 
     private static Set<String> extractUrlsFromPlainText(String text) {
-        if (isBlank(text)) return Collections.emptySet();
+        if (isBlank(text)) return new LinkedHashSet<>();
         Set<String> urls = new LinkedHashSet<>();
         Matcher matcher = PLAIN_TEXT_URL_PATTERN.matcher(text);
         while (matcher.find()) {

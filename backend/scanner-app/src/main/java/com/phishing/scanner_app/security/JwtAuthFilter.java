@@ -1,4 +1,4 @@
-package com.phishing.scanner_app;
+package com.phishing.scanner_app.security;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -32,15 +32,19 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         if (header != null && header.startsWith("Bearer ")) {
             String token = header.substring(7);
 
-            if (JwtUtil.isTokenValid(token)) {
+            if (jwtUtil.isTokenValid(token)) {
 
-                String username = JwtUtil.getUsername(token);
+                String username = jwtUtil.getUsername(token);
+                String role = jwtUtil.getRole(token);
+
+                SimpleGrantedAuthority authority =
+                        new SimpleGrantedAuthority("ROLE_" + role);
 
                 UsernamePasswordAuthenticationToken auth =
                         new UsernamePasswordAuthenticationToken(
                                 username,
                                 null,
-                                Collections.emptyList()
+                                List.of(authority)
                         );
 
                 SecurityContextHolder.getContext().setAuthentication(auth);
@@ -51,24 +55,6 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             }
         }
 
-if (JwtUtil.isTokenValid(token)) {
-
-    String username = JwtUtil.getUsername(token);
-    String role = JwtUtil.getRole(token);
-
-    // IMPORTANT: Spring expects "ROLE_" prefix
-    SimpleGrantedAuthority authority =
-            new SimpleGrantedAuthority("ROLE_" + role);
-
-    UsernamePasswordAuthenticationToken auth =
-            new UsernamePasswordAuthenticationToken(
-                    username,
-                    null,
-                    List.of(authority)
-            );
-
-    SecurityContextHolder.getContext().setAuthentication(auth);
-}
 
         filterChain.doFilter(request, response);
     }

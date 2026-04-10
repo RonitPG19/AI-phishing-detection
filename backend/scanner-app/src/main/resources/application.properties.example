@@ -19,4 +19,4 @@ threat-intel.urlhaus-url=threat-intel.urlhaus-url=https://urlhaus-api.abuse.ch/v
 threat-intel.max-age-hours=24
 threat-intel.refresh-check-ms=3600000
 
-jwt.secret=my_super_secret_key_which_is_long_enough
+jwt.secret=${JWT_SECRET:my_super_secret_key_which_is_long_enough_123456}

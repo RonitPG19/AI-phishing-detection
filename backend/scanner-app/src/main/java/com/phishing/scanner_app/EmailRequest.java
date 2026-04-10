@@ -1,7 +1,6 @@
 package com.phishing.scanner_app;
 
 import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 import java.util.List;
@@ -12,7 +11,6 @@ public class EmailRequest {
     @Size(max = 500, message = "Subject must not exceed 500 characters")
     private String subject;
 
-    @NotBlank(message = "Sender (from) is required")
     @Email(message = "Sender (from) must be a valid email address")
     private String from;
 
@@ -23,6 +21,40 @@ public class EmailRequest {
     private String bodyText;
 
     private Map<String, List<String>> headers;
+
+    /**
+     * Extracted links from the email, each with href and display text.
+     * When bodyHtml/bodyText are absent, these links are scanned directly.
+     */
+    @Size(max = 50, message = "Cannot scan more than 50 links at once")
+    private List<LinkItem> links;
+
+    // ── Nested link item ──
+    public static class LinkItem {
+        private String href;
+        private String text;
+
+        public String getHref() { return href; }
+        public void setHref(String href) { this.href = href; }
+        public String getText() { return text; }
+        public void setText(String text) { this.text = text; }
+    }
+
+    /**
+     * Returns true when the request has body content (HTML or plain text),
+     * meaning a full email scan with AI/header checks should be performed.
+     */
+    public boolean hasBodyContent() {
+        return (bodyHtml != null && !bodyHtml.isBlank())
+            || (bodyText != null && !bodyText.isBlank());
+    }
+
+    /**
+     * Returns true when the request has explicit links to scan.
+     */
+    public boolean hasLinks() {
+        return links != null && !links.isEmpty();
+    }
 
     // Getters and setters
     public String getSubject() {
@@ -63,5 +95,13 @@ public class EmailRequest {
 
     public void setHeaders(Map<String, List<String>> headers) {
         this.headers = headers;
+    }
+
+    public List<LinkItem> getLinks() {
+        return links;
+    }
+
+    public void setLinks(List<LinkItem> links) {
+        this.links = links;
     }
 }

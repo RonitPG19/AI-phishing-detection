@@ -1,4 +1,4 @@
-package com.phishing.scanner_app;
+package com.phishing.scanner_app.controller;
 
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;

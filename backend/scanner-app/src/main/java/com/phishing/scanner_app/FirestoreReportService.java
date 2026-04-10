@@ -125,6 +125,65 @@ public class FirestoreReportService {
         
         return document;
     }
+
+    /**
+     * Save a link-only scan report to Firestore.
+     */
+    public String saveLinkScanReport(LinkScanReport report) {
+        if (firestore == null) {
+            LOGGER.debug("Skipping Firestore write because Firebase is not enabled");
+            return null;
+        }
+
+        try {
+            return saveLinkReportWithRetry(report);
+        } catch (Exception exception) {
+            LOGGER.warn("Failed to save link scan report in Firestore after {} retries: {}",
+                MAX_RETRIES, exception.getMessage());
+            LOGGER.debug("Firestore error details:", exception);
+            return null;
+        }
+    }
+
+    private String saveLinkReportWithRetry(LinkScanReport report) throws Exception {
+        Exception lastException = null;
+
+        for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                Map<String, Object> document = buildLinkScanDocument(report);
+                DocumentReference ref = firestore.collection(java.util.Objects.requireNonNull(collectionName)).add(document).get();
+                LOGGER.debug("Successfully saved link scan report to Firestore: {}", ref.getId());
+                return ref.getId();
+            } catch (Exception exception) {
+                lastException = exception;
+                if (attempt < MAX_RETRIES) {
+                    long delayMs = RETRY_DELAY_MS * (long) Math.pow(2, attempt - 1);
+                    LOGGER.debug("Firestore write attempt {} failed: {}. Retrying in {}ms...",
+                        attempt, exception.getMessage(), delayMs);
+                    Thread.sleep(delayMs);
+                } else {
+                    LOGGER.warn("Firestore write attempt {} failed: {} (final attempt)",
+                        attempt, exception.getMessage());
+                }
+            }
+        }
+
+        throw lastException;
+    }
+
+    private Map<String, Object> buildLinkScanDocument(LinkScanReport report) {
+        Map<String, Object> document = new LinkedHashMap<>();
+        document.put("savedAt", Instant.now().toString());
+        document.put("type", "link_scan");
+        document.put("urlCount", report.urlCount());
+        document.put("urls", report.urls());
+        document.put("overallRiskScore", report.overallRiskScore());
+        document.put("verdict", report.verdict());
+        document.put("scoreBreakdown", report.scoreBreakdown());
+        document.put("findings", mapFindings(report.findings()));
+        return document;
+    }
+
     public Map<String, Object> getReport(String id) {
         if (firestore == null) {
             LOGGER.debug("Skipping Firestore read because Firebase is not enabled");
