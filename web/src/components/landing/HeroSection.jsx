@@ -39,10 +39,10 @@ export function HeroSection({ onNavigate, theme = "dark" }) {
         >
           <motion.div variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0, transition: { duration: 0.5 } } }}>
             <h1 className={`text-5xl font-semibold leading-[1.05] tracking-tight sm:text-6xl xl:text-7xl ${isDark ? "text-white" : "text-stone-950"}`}>
-              Phishing analysis,<br className="hidden lg:block" /> simplified.
+              Trust your<br className="hidden lg:block" /> inbox again!
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
-              Tribunal decodes suspicious emails directly in your inbox. We consolidate sender intelligence, link analysis, and message forensics into a single, actionable verdict.
+              Tribunal decodes suspicious emails directly in your inbox.  It highlights exactly what to watch out for and gives you the confidence to manage your inbox safely.
             </p>
           </motion.div>
 
@@ -69,11 +69,10 @@ export function HeroSection({ onNavigate, theme = "dark" }) {
           transition={{ duration: 0.4, delay: 0.1, ease: "easeOut" }}
           className="relative hidden lg:block"
         >
-          <div className={`relative mx-auto max-w-sm rounded-2xl overflow-hidden shadow-2xl ${
-            isDark
-              ? "border border-white/10 bg-black ring-1 ring-white/5"
-              : "border border-stone-200 bg-white ring-1 ring-stone-200/80 shadow-[0_30px_90px_-30px_rgba(15,23,42,0.28)]"
-          }`}>
+          <div className={`relative mx-auto max-w-sm rounded-2xl overflow-hidden shadow-2xl ${isDark
+            ? "border border-white/10 bg-black ring-1 ring-white/5"
+            : "border border-stone-200 bg-white ring-1 ring-stone-200/80 shadow-[0_30px_90px_-30px_rgba(15,23,42,0.28)]"
+            }`}>
             <img
               src="/hero_demo.png"
               alt="Tribunal Platform Demo"
