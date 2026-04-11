@@ -1,4 +1,4 @@
-package com.phishing.scanner_app;
+package com.phishing.scanner_app.dto;
 
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;

@@ -1,4 +1,4 @@
-package com.phishing.scanner_app;
+package com.phishing.scanner_app.config;
 
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.firebase.FirebaseApp;
@@ -62,4 +62,3 @@ public class FirebaseConfig {
         return new FileInputStream(serviceAccountPath);
     }
 }
-

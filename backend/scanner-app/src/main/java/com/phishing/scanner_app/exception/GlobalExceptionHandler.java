@@ -1,4 +1,4 @@
-package com.phishing.scanner_app;
+package com.phishing.scanner_app.exception;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

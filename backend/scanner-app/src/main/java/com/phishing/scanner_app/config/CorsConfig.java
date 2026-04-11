@@ -1,4 +1,4 @@
-package com.phishing.scanner_app;
+package com.phishing.scanner_app.config;
 
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;

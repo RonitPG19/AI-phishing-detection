@@ -1,4 +1,9 @@
-package com.phishing.scanner_app;
+package com.phishing.scanner_app.controller;
+
+import com.phishing.scanner_app.dto.EmailRequest;
+import com.phishing.scanner_app.model.EmailScanReport;
+import com.phishing.scanner_app.service.FirestoreReportService;
+import com.phishing.scanner_app.service.PhishingScannerService;
 
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,12 +29,12 @@ public class PhishingScannerController {
     }
 
     @PostMapping("/scan")
-    public ResponseEntity<PhishingScannerService.EmailScanReport> scanEmail(@Valid @RequestBody EmailRequest request) {
-        PhishingScannerService.EmailScanReport report = scannerService.scanEmail(request, safeBrowsingApiKey);
+    public ResponseEntity<EmailScanReport> scanEmail(@Valid @RequestBody EmailRequest request) {
+        EmailScanReport report = scannerService.scanEmail(request, safeBrowsingApiKey);
 
         String reportId = firestoreReportService.savePhishingReport(request, report);
 
-        PhishingScannerService.EmailScanReport responseReport = new PhishingScannerService.EmailScanReport(
+        EmailScanReport responseReport = new EmailScanReport(
             report.subject(),
             report.sender(),
             report.urlCount(),
@@ -56,7 +61,7 @@ public class PhishingScannerController {
     public ResponseEntity<List<Map<String, Object>>> listReports(
         @RequestParam(defaultValue = "20") int limit
     ) {
-        int effectiveLimit = Math.min(Math.max(limit, 1), 100);
+        int effectiveLimit = Math.clamp(limit, 1, 100);
         List<Map<String, Object>> reports = firestoreReportService.listReports(effectiveLimit);
         return ResponseEntity.ok(reports);
     }

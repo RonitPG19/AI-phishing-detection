@@ -1,6 +1,7 @@
-package com.phishing.scanner_app;
+package com.phishing.scanner_app.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.phishing.scanner_app.model.RiskFinding;
 
 import java.util.List;
 import java.util.Map;
@@ -24,7 +25,7 @@ public record LinkScanReport(
     String verdict,
 
     @JsonProperty("findings")
-    List<PhishingScannerService.RiskFinding> findings,
+    List<RiskFinding> findings,
 
     @JsonProperty("scoreBreakdown")
     Map<String, Integer> scoreBreakdown,

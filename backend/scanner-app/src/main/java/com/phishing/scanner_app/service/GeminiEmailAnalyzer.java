@@ -1,4 +1,4 @@
-package com.phishing.scanner_app;
+package com.phishing.scanner_app.service;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -72,6 +72,8 @@ public class GeminiEmailAnalyzer {
         phishingLikelihood MUST be exactly one of: HIGH, MEDIUM, LOW, NONE.
         If the email appears completely legitimate, return:
         { "phishingLikelihood": "NONE", "summary": "No phishing indicators detected.", "indicators": [] }
+        
+        If for example the email is from no-reply@accounts.google.com then please give NONE if the email is official.
 
         Do NOT include any text outside the JSON. Do NOT wrap in markdown code blocks.
         """;
@@ -145,10 +147,10 @@ public class GeminiEmailAnalyzer {
             sb.append("Subject: ").append(sanitizeForLlm(subject)).append("\n");
         sb.append("\n");
         if (bodyText != null) {
-            String sanitized = sanitizeForLlm(bodyText); // ← actually sanitize
-            sb.append("<<<EMAIL_BODY_START>>>\n");        // ← boundary start
+            String sanitized = sanitizeForLlm(bodyText);
+            sb.append("<<<EMAIL_BODY_START>>>\n");
             sb.append(sanitized);
-            sb.append("\n<<<EMAIL_BODY_END>>>");           // ← boundary end
+            sb.append("\n<<<EMAIL_BODY_END>>>");
         }
         return sb.toString();
     }
@@ -163,7 +165,7 @@ public class GeminiEmailAnalyzer {
                 "generationConfig", Map.of(
                         "temperature", 0.1,
                         "maxOutputTokens", 1024,
-                        "responseMimeType", "application/json"  // ← forces JSON at API level
+                        "responseMimeType", "application/json"
                 ));
         return MAPPER.writeValueAsString(request);
     }

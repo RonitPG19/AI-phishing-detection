@@ -1,4 +1,4 @@
-package com.phishing.scanner_app;
+package com.phishing.scanner_app.util;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

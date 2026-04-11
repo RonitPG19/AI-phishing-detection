@@ -1,4 +1,4 @@
-package com.phishing.scanner_app;
+package com.phishing.scanner_app.util;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -124,4 +124,3 @@ public class WhitelistManager {
         return parts[parts.length - 2] + "." + parts[parts.length - 1];
     }
 }
-

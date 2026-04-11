@@ -1,10 +1,17 @@
-package com.phishing.scanner_app;
+package com.phishing.scanner_app.service;
 
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.Query;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
+
+import com.phishing.scanner_app.dto.EmailRequest;
+import com.phishing.scanner_app.dto.LinkScanReport;
+import com.phishing.scanner_app.model.CategoryResult;
+import com.phishing.scanner_app.model.EmailScanReport;
+import com.phishing.scanner_app.model.RiskFinding;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -26,7 +33,6 @@ public class FirestoreReportService {
 
     private final Firestore firestore;
     private final String collectionName;
-    private final int firestoreTimeoutSeconds;
 
     public FirestoreReportService(
         ObjectProvider<Firestore> firestoreProvider,
@@ -35,10 +41,9 @@ public class FirestoreReportService {
     ) {
         this.firestore = firestoreProvider.getIfAvailable();
         this.collectionName = collectionName;
-        this.firestoreTimeoutSeconds = firestoreTimeoutSeconds;
     }
 
-    public String savePhishingReport(EmailRequest request, PhishingScannerService.EmailScanReport report) {
+    public String savePhishingReport(EmailRequest request, EmailScanReport report) {
         if (firestore == null) {
             LOGGER.debug("Skipping Firestore write because Firebase is not enabled");
             return null;
@@ -54,7 +59,7 @@ public class FirestoreReportService {
         }
     }
 
-    private String saveWithRetry(EmailRequest request, PhishingScannerService.EmailScanReport report) throws Exception {
+    private String saveWithRetry(EmailRequest request, EmailScanReport report) throws Exception {
         Exception lastException = null;
         
         for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -80,7 +85,7 @@ public class FirestoreReportService {
         throw lastException;
     }
 
-    private Map<String, Object> buildDocument(EmailRequest request, PhishingScannerService.EmailScanReport report) {
+    private Map<String, Object> buildDocument(EmailRequest request, EmailScanReport report) {
         Map<String, Object> document = new LinkedHashMap<>();
         document.put("savedAt", Instant.now().toString());
         document.put("from", request.getFrom());
@@ -236,7 +241,7 @@ public class FirestoreReportService {
         }
     }
 
-    private List<Map<String, Object>> mapFindings(List<PhishingScannerService.RiskFinding> findings) {
+    private List<Map<String, Object>> mapFindings(List<RiskFinding> findings) {
         return findings.stream()
             .map(finding -> {
                 Map<String, Object> mapped = new LinkedHashMap<>();
@@ -249,7 +254,7 @@ public class FirestoreReportService {
             .toList();
     }
 
-    private Map<String, Object> mapCategory(PhishingScannerService.CategoryResult category) {
+    private Map<String, Object> mapCategory(CategoryResult category) {
         Map<String, Object> mapped = new LinkedHashMap<>();
         mapped.put("findings", mapFindings(category.findings()));
         mapped.put("scoreBreakdown", category.scoreBreakdown());

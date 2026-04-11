@@ -1,4 +1,16 @@
-package com.phishing.scanner_app;
+package com.phishing.scanner_app.service;
+
+import com.phishing.scanner_app.dto.EmailRequest;
+import com.phishing.scanner_app.dto.LinkScanReport;
+import com.phishing.scanner_app.model.CategorizedFindings;
+import com.phishing.scanner_app.model.EmailContent;
+import com.phishing.scanner_app.model.EmailScanReport;
+import com.phishing.scanner_app.model.HeaderInspectionResult;
+import com.phishing.scanner_app.model.RiskFinding;
+import com.phishing.scanner_app.model.RiskScoreResult;
+import com.phishing.scanner_app.model.Severity;
+import com.phishing.scanner_app.util.RedirectChainResolver;
+import com.phishing.scanner_app.util.WhitelistManager;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -6,8 +18,6 @@ import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-
-import com.fasterxml.jackson.annotation.JsonProperty;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLHandshakeException;
@@ -459,6 +469,7 @@ public class PhishingScannerService {
         }
         return urls;
     }
+
     private void checkThreatIntelBlacklist(Set<String> urls, List<RiskFinding> findings) {
         for (String url : urls) {
             if (threatIntelService.isBlacklisted(url)) {
@@ -581,7 +592,7 @@ public class PhishingScannerService {
             Map.entry('@', 'a'),
             Map.entry('!', 'i'),
             Map.entry('|', 'l'),
-            Map.entry('ʼ', '\'')
+            Map.entry('\u02BC', '\'')
     );
 
     private static String toHomoglyphSkeleton(String domain) {
@@ -640,10 +651,9 @@ public class PhishingScannerService {
         return false;
     }
 
-    // Change method signature:
     private static void inspectHomographDomains(
             Map<String, String> urlDomainMap,
-            Set<String> trustedDomains,   // ← ADD
+            Set<String> trustedDomains,
             List<RiskFinding> findings) {
 
         for (Map.Entry<String, String> entry : urlDomainMap.entrySet()) {
@@ -659,7 +669,7 @@ public class PhishingScannerService {
                 ));
             }
 
-            // Digit-letter substitution check (new)
+            // Digit-letter substitution check
             String rootDomain = extractRootDomain(domain);
             String impersonatedDomain = findHomoglyphTarget(rootDomain, trustedDomains);
             if (impersonatedDomain != null) {
@@ -858,8 +868,8 @@ public class PhishingScannerService {
     private static Set<String> loadTrustedDomains() {
         Set<String> trustedDomains = new LinkedHashSet<>();
         Path appDir = resolveApplicationDirectory();
-        loadTrustedDomainsFromCsv(appDir.resolve("classes\\top-1m-Tranco.csv"), trustedDomains);
-        loadTrustedDomainsFromCsv(appDir.resolve("classes\\top-1m-umbrella.csv"), trustedDomains);
+        loadTrustedDomainsFromCsv(appDir.resolve(Paths.get("classes", "top-1m-Tranco.csv")), trustedDomains);
+        loadTrustedDomainsFromCsv(appDir.resolve(Paths.get("classes", "top-1m-umbrella.csv")), trustedDomains);
         return trustedDomains;
     }
 
@@ -884,11 +894,6 @@ public class PhishingScannerService {
             logWarning("Failed to load trusted domains from " + csvPath, exception);
         }
     }
-
-    public record RiskScoreResult(
-        int overallScore,
-        Map<String, Integer> scoreBreakdown
-    ) {}
 
     private static RiskScoreResult calculateRiskScore(
             List<RiskFinding> findings,
@@ -979,7 +984,7 @@ public class PhishingScannerService {
 
         // ── Whitelist logic ──
         if (senderWhitelisted) {
-            whitelistScore -= 15;
+            whitelistScore -= 20;
         }
 
         // ── Apply caps ──
@@ -1026,6 +1031,43 @@ public class PhishingScannerService {
         total = Math.min(100, total);
 
         return new RiskScoreResult(total, breakdown);
+    }
+
+    private static CategorizedFindings categorizeResults(List<RiskFinding> findings, Map<String, Integer> scoreBreakdown) {
+        CategorizedFindings cats = new CategorizedFindings();
+
+        for (RiskFinding f : findings) {
+            String desc = f.description().toLowerCase();
+            String target = f.target().toLowerCase();
+            if (desc.contains("spf") || desc.contains("dkim") || desc.contains("dmarc") || 
+                desc.contains("return-path") || desc.contains("reply-to") || desc.contains("display name") || 
+                desc.contains("sender") || target.equals("spf") || target.equals("dkim") || target.equals("dmarc")) {
+                cats.header().findings().add(f);
+            } else if (target.contains("[ai]")) {
+                if (desc.contains("subject") || target.contains("subject")) {
+                    cats.subject().findings().add(f);
+                } else {
+                    cats.body().findings().add(f);
+                }
+            } else if (desc.contains("subject") || target.contains("subject")) {
+                cats.subject().findings().add(f);
+            } else {
+                cats.links().findings().add(f);
+            }
+        }
+
+        for (Map.Entry<String, Integer> e : scoreBreakdown.entrySet()) {
+            String k = e.getKey();
+            if (k.equals("auth") || k.equals("social") || k.equals("whitelist")) {
+                cats.header().scoreBreakdown().put(k, e.getValue());
+            } else if (k.equals("ai")) {
+                cats.body().scoreBreakdown().put(k, e.getValue());
+            } else {
+                cats.links().scoreBreakdown().put(k, e.getValue());
+            }
+        }
+
+        return cats;
     }
 
     private static String extractFromDomain(String from) {
@@ -1168,7 +1210,7 @@ public class PhishingScannerService {
         }
 
         List<String> orderedUrls = new ArrayList<>(urls);
-        int poolSize = Math.max(1, Math.min(REDIRECT_MAX_THREADS, orderedUrls.size()));
+        int poolSize = Math.clamp(orderedUrls.size(), 1, REDIRECT_MAX_THREADS);
         ExecutorService executor = Executors.newFixedThreadPool(poolSize);
         List<Future<RedirectChainResolver.RedirectChain>> futures = new ArrayList<>(orderedUrls.size());
 
@@ -1202,7 +1244,7 @@ public class PhishingScannerService {
         }
 
         List<String> orderedRoots = new ArrayList<>(rootDomains);
-        int poolSize = Math.max(1, Math.min(WHOIS_MAX_THREADS, orderedRoots.size()));
+        int poolSize = Math.clamp(orderedRoots.size(), 1, WHOIS_MAX_THREADS);
         ExecutorService executor = Executors.newFixedThreadPool(poolSize);
         List<Future<Map.Entry<String, Integer>>> futures = new ArrayList<>(orderedRoots.size());
 
@@ -1320,168 +1362,5 @@ public class PhishingScannerService {
 
     private static String defaultString(String value, String fallback) {
         return value == null ? fallback : value;
-    }
-
-    public enum Severity {
-        LOW(5),
-        MEDIUM(15),
-        HIGH(25);
-
-        private final int score;
-
-        Severity(int score) {
-            this.score = score;
-        }
-
-        public int score() {
-            return score;
-        }
-    }
-
-    public static final class RiskFinding {
-        private final String target;
-        private final String description;
-        private final Severity severity;
-        private final int scoreContribution;
-
-        public RiskFinding(String target, String description, Severity severity) {
-            this(target, description, severity, severity.score());
-        }
-
-        public RiskFinding(String target, String description, Severity severity, int scoreContribution) {
-            this.target = target;
-            this.description = description;
-            this.severity = severity;
-            this.scoreContribution = scoreContribution;
-        }
-
-        @JsonProperty("target")
-        public String target() {
-            return target;
-        }
-        
-        @JsonProperty("description")
-        public String description() {
-            return description;
-        }
-
-        @JsonProperty("severity")
-        public Severity severity() {
-            return severity;
-        }
-
-        @JsonProperty("scoreContribution")
-        public int scoreContribution() {
-            return scoreContribution;
-        }
-    }
-
-    public static final class HeaderInspectionResult {
-        public boolean spfFail;
-        public boolean dkimFail;
-        public boolean dmarcFail;
-        public boolean displayNameMismatch;
-        public boolean replyToMismatch;
-        public boolean returnPathMismatch;
-    }
-
-    public static final class EmailContent {
-        private final StringBuilder html = new StringBuilder();
-        private final StringBuilder text = new StringBuilder();
-
-        public void appendHtml(String htmlPart) {
-            html.append(htmlPart).append('\n');
-        }
-
-        public void appendText(String textPart) {
-            text.append(textPart).append('\n');
-        }
-
-        public boolean hasHtml() {
-            return html.length() > 0;
-        }
-
-        public String getHtml() {
-            return html.toString();
-        }
-
-        public String getText() {
-            return text.toString();
-        }
-    }
-
-    public static final class CategoryResult {
-        private final List<RiskFinding> findings = new ArrayList<>();
-        private final Map<String, Integer> scoreBreakdown = new LinkedHashMap<>();
-
-        @JsonProperty("findings")
-        public List<RiskFinding> findings() { return findings; }
-        @JsonProperty("scoreBreakdown")
-        public Map<String, Integer> scoreBreakdown() { return scoreBreakdown; }
-    }
-
-    public static final class CategorizedFindings {
-        private final CategoryResult header = new CategoryResult();
-        private final CategoryResult subject = new CategoryResult();
-        private final CategoryResult body = new CategoryResult();
-        private final CategoryResult links = new CategoryResult();
-
-        @JsonProperty("Header")
-        public CategoryResult header() { return header; }
-        @JsonProperty("Subject")
-        public CategoryResult subject() { return subject; }
-        @JsonProperty("Body")
-        public CategoryResult body() { return body; }
-        @JsonProperty("Links")
-        public CategoryResult links() { return links; }
-    }
-
-    private static CategorizedFindings categorizeResults(List<RiskFinding> findings, Map<String, Integer> scoreBreakdown) {
-        CategorizedFindings cats = new CategorizedFindings();
-
-        for (RiskFinding f : findings) {
-            String desc = f.description().toLowerCase();
-            String target = f.target().toLowerCase();
-            if (desc.contains("spf") || desc.contains("dkim") || desc.contains("dmarc") || 
-                desc.contains("return-path") || desc.contains("reply-to") || desc.contains("display name") || 
-                desc.contains("sender") || target.equals("spf") || target.equals("dkim") || target.equals("dmarc")) {
-                cats.header().findings().add(f);
-            } else if (target.contains("[ai]")) {
-                if (desc.contains("subject") || target.contains("subject")) {
-                    cats.subject().findings().add(f);
-                } else {
-                    cats.body().findings().add(f);
-                }
-            } else if (desc.contains("subject") || target.contains("subject")) {
-                cats.subject().findings().add(f);
-            } else {
-                cats.links().findings().add(f);
-            }
-        }
-
-        for (Map.Entry<String, Integer> e : scoreBreakdown.entrySet()) {
-            String k = e.getKey();
-            if (k.equals("auth") || k.equals("social") || k.equals("whitelist")) {
-                cats.header().scoreBreakdown().put(k, e.getValue());
-            } else if (k.equals("ai")) {
-                cats.body().scoreBreakdown().put(k, e.getValue());
-            } else {
-                cats.links().scoreBreakdown().put(k, e.getValue());
-            }
-        }
-
-        return cats;
-    }
-
-    public record EmailScanReport(
-        String subject,
-        String sender,
-        int urlCount,
-        CategorizedFindings sections,
-        HeaderInspectionResult headerInspectionResult,
-        int overallRiskScore,
-        String reportId,
-        GeminiEmailAnalyzer.GeminiAnalysisResult aiAnalysis
-    ) {
     }
 }
