@@ -103,10 +103,10 @@ public class FirestoreReportService {
         
         if (report.sections() != null) {
             Map<String, Object> sectionsMap = new LinkedHashMap<>();
-            sectionsMap.put("Header", mapCategory(report.sections().header()));
-            sectionsMap.put("Subject", mapCategory(report.sections().subject()));
-            sectionsMap.put("Body", mapCategory(report.sections().body()));
-            sectionsMap.put("Links", mapCategory(report.sections().links()));
+            sectionsMap.put("Header", mapCategory("header", report.sections().header()));
+            sectionsMap.put("Subject", mapCategory("subject", report.sections().subject()));
+            sectionsMap.put("Body", mapCategory("body", report.sections().body()));
+            sectionsMap.put("Links", mapCategory("links", report.sections().links()));
             document.put("sections", sectionsMap);
         }
 
@@ -185,7 +185,7 @@ public class FirestoreReportService {
         document.put("overallRiskScore", report.overallRiskScore());
         document.put("verdict", report.verdict());
         document.put("scoreBreakdown", report.scoreBreakdown());
-        document.put("findings", mapFindings(report.findings()));
+        document.put("findings", mapFindings("links", report.findings()));
         return document;
     }
 
@@ -241,10 +241,12 @@ public class FirestoreReportService {
         }
     }
 
-    private List<Map<String, Object>> mapFindings(List<RiskFinding> findings) {
-        return findings.stream()
-            .map(finding -> {
+    private List<Map<String, Object>> mapFindings(String categoryName, List<RiskFinding> findings) {
+        return java.util.stream.IntStream.range(0, findings.size())
+            .mapToObj(index -> {
+                RiskFinding finding = findings.get(index);
                 Map<String, Object> mapped = new LinkedHashMap<>();
+                mapped.put("id", ScanResponseMapper.findingId(categoryName, index));
                 mapped.put("target", finding.target());
                 mapped.put("description", finding.description());
                 mapped.put("severity", finding.severity().name());
@@ -254,9 +256,9 @@ public class FirestoreReportService {
             .toList();
     }
 
-    private Map<String, Object> mapCategory(CategoryResult category) {
+    private Map<String, Object> mapCategory(String categoryName, CategoryResult category) {
         Map<String, Object> mapped = new LinkedHashMap<>();
-        mapped.put("findings", mapFindings(category.findings()));
+        mapped.put("findings", mapFindings(categoryName, category.findings()));
         mapped.put("scoreBreakdown", category.scoreBreakdown());
         return mapped;
     }

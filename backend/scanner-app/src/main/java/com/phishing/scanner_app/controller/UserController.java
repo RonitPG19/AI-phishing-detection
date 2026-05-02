@@ -7,13 +7,14 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.security.Principal;
 
 @RestController
 @RequestMapping("/user")
 public class UserController {
 
     @GetMapping("/profile")
-    public String userContent() {
-        return "User content";
+    public String userContent(Principal principal) {
+        return "User profile for UUID: " + principal.getName();
     }
 }
