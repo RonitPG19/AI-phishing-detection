@@ -34,6 +34,11 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers("/public/**", "/actuator/health", "/actuator/info").permitAll()
 
+                // OAuth 
+                .requestMatchers("/api/oauth/**", "/health").permitAll()
+                .anyRequest().authenticated())
+            .oauth2Login(oauth -> oauth.successHandler(successHandler));
+                
                 // Only ADMIN
                 .requestMatchers("/admin/**").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.GET, "/api/phishing/reports").hasRole("ADMIN")
