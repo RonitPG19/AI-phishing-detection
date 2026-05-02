@@ -1,13 +1,14 @@
 package com.phishing.scanner_app.controller;
 
 import com.phishing.scanner_app.dto.EmailRequest;
-import com.phishing.scanner_app.model.EmailScanReport;
+import com.phishing.scanner_app.dto.ScanResponse;
 import com.phishing.scanner_app.service.FirestoreReportService;
-import com.phishing.scanner_app.service.PhishingScannerService;
+import com.phishing.scanner_app.service.ScanOrchestrationService;
 
 import jakarta.validation.Valid;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -17,37 +18,26 @@ import java.util.Map;
 @RequestMapping("/api/phishing")
 public class PhishingScannerController {
 
-    private final PhishingScannerService scannerService;
+    private final ScanOrchestrationService scanOrchestrationService;
     private final FirestoreReportService firestoreReportService;
 
-    @Value("${GSB_API_KEY:#{null}}")
-    private String safeBrowsingApiKey;
-
-    public PhishingScannerController(PhishingScannerService scannerService, FirestoreReportService firestoreReportService) {
-        this.scannerService = scannerService;
+    public PhishingScannerController(ScanOrchestrationService scanOrchestrationService, FirestoreReportService firestoreReportService) {
+        this.scanOrchestrationService = scanOrchestrationService;
         this.firestoreReportService = firestoreReportService;
     }
 
+    @PreAuthorize("hasAnyRole('USER','ADMIN')")
     @PostMapping("/scan")
-    public ResponseEntity<EmailScanReport> scanEmail(@Valid @RequestBody EmailRequest request) {
-        EmailScanReport report = scannerService.scanEmail(request, safeBrowsingApiKey);
-
-        String reportId = firestoreReportService.savePhishingReport(request, report);
-
-        EmailScanReport responseReport = new EmailScanReport(
-            report.subject(),
-            report.sender(),
-            report.urlCount(),
-            report.sections(),
-            report.headerInspectionResult(),
-            report.overallRiskScore(),
-            reportId,
-            report.aiAnalysis()
-        );
-
-        return ResponseEntity.ok(responseReport);
+    public ResponseEntity<ScanResponse> scanEmail(
+        Authentication authentication,
+        @Valid @RequestBody EmailRequest request,
+        @RequestParam(defaultValue = "false") boolean forceRefresh
+    ) {
+        System.out.println("Scan email request: " + request);
+        return ResponseEntity.ok(scanOrchestrationService.scanEmail(authentication.getName(), request, forceRefresh));
     }
 
+    @PreAuthorize("hasAnyRole('USER','ADMIN')")
     @GetMapping("/reports/{id}")
     public ResponseEntity<Map<String, Object>> getReport(@PathVariable String id) {
         Map<String, Object> report = firestoreReportService.getReport(id);
@@ -57,6 +47,7 @@ public class PhishingScannerController {
         return ResponseEntity.ok(report);
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/reports")
     public ResponseEntity<List<Map<String, Object>>> listReports(
         @RequestParam(defaultValue = "20") int limit

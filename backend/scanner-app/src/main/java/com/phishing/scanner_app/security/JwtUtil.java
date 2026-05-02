@@ -38,11 +38,12 @@ public class JwtUtil {
     }
 
     public String getRole(String token) {
-    return validateToken(token).get("role", String.class);
-}
+        String role = validateToken(token).get("role", String.class);
+        return role != null ? role.toUpperCase() : null;
+    }
 
-    public String getUsername(String token) {
-        return validateToken(token).getSubject();
+    public String getUid(String token) {
+        return validateToken(token).get("uid", String.class);
     }
 
     public boolean isTokenValid(String token) {

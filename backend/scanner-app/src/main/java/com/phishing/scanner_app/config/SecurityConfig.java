@@ -32,13 +32,20 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                .requestMatchers("/public/**", "/api/phishing/**", "/actuator/health", "/actuator/info").permitAll()
+                .requestMatchers("/public/**", "/actuator/health", "/actuator/info").permitAll()
 
                 // Only ADMIN
                 .requestMatchers("/admin/**").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.GET, "/api/phishing/reports").hasRole("ADMIN")
 
                 // USER or ADMIN
                 .requestMatchers("/user/**").hasAnyRole("USER", "ADMIN")
+                .requestMatchers("/api/phishing/scan").hasAnyRole("USER", "ADMIN")
+                .requestMatchers("/api/phishing/history/**").hasAnyRole("USER", "ADMIN")
+                .requestMatchers("/api/phishing/flags/mine").hasAnyRole("USER", "ADMIN")
+                .requestMatchers("/api/phishing/reports/*").hasAnyRole("USER", "ADMIN")
+                .requestMatchers("/api/phishing/reports/*/flags").hasAnyRole("USER", "ADMIN")
+                .requestMatchers("/api/phishing/reports/*/findings/*/flags").hasAnyRole("USER", "ADMIN")
 
                 .anyRequest().authenticated()
             )

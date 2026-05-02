@@ -5,6 +5,11 @@ firebase.service-account.path=classpath:tribunal-ai-firebase-adminsdk-fbsvc-0e96
 firebase.project-id=
 firebase.firestore.collection=phishingReports
 firebase.firestore.timeout.seconds=30
+scanning.cache.enabled=true
+scanning.cache.ttl=PT24H
+scanning.cache.version=v1
+scanning.history.max-page-size=50
+scanning.flags.max-comment-length=500
 gemini.api.key=
 gemini.timeout.ms=30000
 
