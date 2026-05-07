@@ -1,10 +1,14 @@
 package com.phishing.scanner_app.config;
 
+import com.phishing.scanner_app.auth.OAuth2LoginSuccessHandler;
+import com.phishing.scanner_app.auth.MailboxAuthorizationRequestResolver;
 import com.phishing.scanner_app.security.JwtAuthFilter;
 import com.phishing.scanner_app.security.JwtUtil;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -24,20 +28,27 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http, JwtAuthFilter jwtAuthFilter) throws Exception {
+    public OAuth2AuthorizationRequestResolver authorizationRequestResolver(
+            ClientRegistrationRepository clientRegistrationRepository) {
+        return new MailboxAuthorizationRequestResolver(clientRegistrationRepository);
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(
+            HttpSecurity http,
+            JwtAuthFilter jwtAuthFilter,
+            OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler,
+            OAuth2AuthorizationRequestResolver authorizationRequestResolver) throws Exception {
 
         http
             .csrf(csrf -> csrf.disable())
             .cors(Customizer.withDefaults())
-            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers("/public/**", "/actuator/health", "/actuator/info").permitAll()
 
-                // OAuth 
-                .requestMatchers("/api/oauth/**", "/health").permitAll()
-                .anyRequest().authenticated())
-            .oauth2Login(oauth -> oauth.successHandler(successHandler));
+                .requestMatchers("/api/oauth/**", "/oauth2/**", "/login/oauth2/**", "/health").permitAll()
                 
                 // Only ADMIN
                 .requestMatchers("/admin/**").hasRole("ADMIN")
@@ -51,8 +62,13 @@ public class SecurityConfig {
                 .requestMatchers("/api/phishing/reports/*").hasAnyRole("USER", "ADMIN")
                 .requestMatchers("/api/phishing/reports/*/flags").hasAnyRole("USER", "ADMIN")
                 .requestMatchers("/api/phishing/reports/*/findings/*/flags").hasAnyRole("USER", "ADMIN")
+                .requestMatchers("/api/mail/**").hasAnyRole("USER", "ADMIN")
 
                 .anyRequest().authenticated()
+            )
+            .oauth2Login(oauth -> oauth
+                .authorizationEndpoint(endpoint -> endpoint.authorizationRequestResolver(authorizationRequestResolver))
+                .successHandler(oAuth2LoginSuccessHandler)
             )
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 

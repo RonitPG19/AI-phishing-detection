@@ -47,6 +47,11 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.SERVICE_UNAVAILABLE, exception.getMessage());
     }
 
+    @ExceptionHandler(MailIntegrationException.class)
+    public ResponseEntity<Map<String, Object>> handleMailIntegration(MailIntegrationException exception) {
+        return error(HttpStatus.BAD_GATEWAY, exception.getMessage());
+    }
+
     private ResponseEntity<Map<String, Object>> error(HttpStatus status, String message) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", status.value());

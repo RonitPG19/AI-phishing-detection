@@ -43,14 +43,14 @@ Browser Extension
         │
         ▼
 ┌──────────────────────────────────────────────────────┐
-│  PhishingScannerController  (REST API layer)          │
-│  PhishingHistoryController                            │
-│  PhishingFlagController                               │
+│  PhishingScannerController  (REST API layer)         │
+│  PhishingHistoryController                           │
+│  PhishingFlagController                              │
 └────────────┬─────────────────────────────────────────┘
              │
              ▼
 ┌──────────────────────────────────────────────────────┐
-│  ScanOrchestrationService                             │
+│  ScanOrchestrationService                            │
 │  ┌─ ScanFingerprintService  (SHA-256 cache key)      │
 │  ├─ FirestoreScanCacheService  (cache lookup/store)  │
 │  ├─ PhishingScannerService  ◄── CORE DETECTION ──►   │
@@ -154,8 +154,8 @@ Each scan runs through the following stages sequentially. Every stage produces `
 
 **File:** `PhishingScannerService.extractUrlsFromContent()`
 
-- **HTML bodies** → Jsoup parses `<a href="...">` elements  
-- **Plain-text bodies** → Regex extraction of `http(s)://` URLs  
+- **HTML bodies** → Jsoup parses `<a href="...">` elements
+- **Plain-text bodies** → Regex extraction of `http(s)://` URLs
 - **Explicit links** → Merged from the `links[]` field in `EmailRequest`
 
 ### 2. Redirect Chain Resolution
@@ -164,16 +164,17 @@ Each scan runs through the following stages sequentially. Every stage produces `
 
 Follows HTTP 3xx redirects hop-by-hop (max 10 hops, 5s timeout per hop) using HEAD requests with redirects disabled. Also handles:
 
-| Pattern | Technique |
-|---|---|
-| Google redirects (`google.com/url?q=...`) | Query-parameter extraction |
-| Firebase Dynamic Links (`*.page.link`) | `link` param extraction |
-| Salesforce click tracking | `redirect`/`url` param extraction |
-| Microsoft Safe Links | `url` param extraction |
+| Pattern                                   | Technique                         |
+| ----------------------------------------- | --------------------------------- |
+| Google redirects (`google.com/url?q=...`) | Query-parameter extraction        |
+| Firebase Dynamic Links (`*.page.link`)    | `link` param extraction           |
+| Salesforce click tracking                 | `redirect`/`url` param extraction |
+| Microsoft Safe Links                      | `url` param extraction            |
 
 **Findings produced:**
-- `MEDIUM` — Chain ≥ 3 hops  
-- `LOW` — Cross-domain redirect (root domain changes)  
+
+- `MEDIUM` — Chain ≥ 3 hops
+- `LOW` — Cross-domain redirect (root domain changes)
 - `LOW` — Known URL shortener detected (bit.ly, t.co, etc.)
 
 Multi-threaded: up to **8 parallel threads** for redirect resolution.
@@ -184,14 +185,14 @@ Multi-threaded: up to **8 parallel threads** for redirect resolution.
 
 Only runs when the request has body content (full email scan). Checks:
 
-| Check | Severity | Condition |
-|---|---|---|
-| SPF fail | MEDIUM | `Authentication-Results` contains `spf=fail` |
-| DKIM fail | MEDIUM | `Authentication-Results` contains `dkim=fail` |
-| DMARC fail | MEDIUM | `Authentication-Results` contains `dmarc=fail` |
-| Return-Path mismatch | MEDIUM | Root domain of `Return-Path` ≠ `From` |
-| Display name impersonation | MEDIUM | Display name contains a known brand but sender domain doesn't match |
-| Reply-To mismatch | LOW | Root domain of `Reply-To` ≠ `From` |
+| Check                      | Severity | Condition                                                           |
+| -------------------------- | -------- | ------------------------------------------------------------------- |
+| SPF fail                   | MEDIUM   | `Authentication-Results` contains `spf=fail`                        |
+| DKIM fail                  | MEDIUM   | `Authentication-Results` contains `dkim=fail`                       |
+| DMARC fail                 | MEDIUM   | `Authentication-Results` contains `dmarc=fail`                      |
+| Return-Path mismatch       | MEDIUM   | Root domain of `Return-Path` ≠ `From`                               |
+| Display name impersonation | MEDIUM   | Display name contains a known brand but sender domain doesn't match |
+| Reply-To mismatch          | LOW      | Root domain of `Reply-To` ≠ `From`                                  |
 
 ### 4. Threat Intelligence Blacklist
 
@@ -199,13 +200,14 @@ Only runs when the request has body content (full email scan). Checks:
 
 Maintains a **local blacklist** aggregated from multiple threat feeds:
 
-| Feed | Default URL |
-|---|---|
-| OpenPhish | `https://openphish.com/feed.txt` |
+| Feed      | Default URL                                       |
+| --------- | ------------------------------------------------- |
+| OpenPhish | `https://openphish.com/feed.txt`                  |
 | PhishTank | `http://data.phishtank.com/data/online-valid.csv` |
-| URLhaus | Configurable |
+| URLhaus   | Configurable                                      |
 
 **How it works:**
+
 1. On startup, loads cached blacklist from `data/threat-intel/blacklist.csv`
 2. Checks feed age via `blacklist-metadata.properties`
 3. If stale (default: 24h), refreshes from all feeds, merges, and atomically replaces the CSV
@@ -259,12 +261,12 @@ Computes **Levenshtein edit distance** between each extracted domain and the tru
 
 For each HTTPS URL, opens a TLS connection and inspects the X.509 certificate:
 
-| Check | Severity | Condition |
-|---|---|---|
-| Very new certificate | LOW | Issued < 15 days ago |
-| Let's Encrypt + new domain | MEDIUM | LE cert on domain < 30 days old |
-| SSL handshake failure | HIGH | `SSLHandshakeException` |
-| Unresolvable host | LOW | `UnknownHostException` |
+| Check                      | Severity | Condition                       |
+| -------------------------- | -------- | ------------------------------- |
+| Very new certificate       | LOW      | Issued < 15 days ago            |
+| Let's Encrypt + new domain | MEDIUM   | LE cert on domain < 30 days old |
+| SSL handshake failure      | HIGH     | `SSLHandshakeException`         |
+| Unresolvable host          | LOW      | `UnknownHostException`          |
 
 ### 10. AI Analysis (Gemini)
 
@@ -273,6 +275,7 @@ For each HTTPS URL, opens a TLS connection and inspects the X.509 certificate:
 Only runs when the request has body content. Sends the email subject + sender + body to **Google Gemini** (`gemini-3.1-flash-lite-preview`) with a structured system prompt.
 
 **Categories analyzed:**
+
 1. Urgency/pressure language
 2. Credential harvesting attempts
 3. Brand impersonation
@@ -283,6 +286,7 @@ Only runs when the request has body content. Sends the email subject + sender + 
 8. Mismatched context
 
 **Security hardening:**
+
 - Email body wrapped in `<<<EMAIL_BODY_START>>>` / `<<<EMAIL_BODY_END>>>` sentinel tags — system prompt instructs the LLM to never follow instructions inside those tags
 - Input sanitized: zero-width characters, RTL/LTR overrides, and soft hyphens stripped
 - Body truncated to 8,000 chars
@@ -298,17 +302,17 @@ Only runs when the request has body content. Sends the email subject + sender + 
 
 Each detection stage's findings are bucketed into scoring categories with **individual caps** to prevent any single signal from dominating:
 
-| Category | Cap | Sources |
-|---|---|---|
-| `blacklist` | Uncapped | Threat intel blacklist matches |
-| `threatIntel` | 30 | Google Safe Browsing hits |
-| `domainAge` | 20 | Young domains, typosquatting, homographs |
-| `ssl` | 10 | Certificate issues |
-| `auth` | 15 | SPF/DKIM/DMARC failures (+5 bonus if all three fail) |
-| `social` | 15 | Display name / Reply-To mismatches |
-| `url` | 5 | Redirect chains, shorteners |
-| `ai` | 15 | Gemini-detected indicators |
-| `whitelist` | –20 | Sender domain in top-1M whitelist (reduces score) |
+| Category      | Cap      | Sources                                              |
+| ------------- | -------- | ---------------------------------------------------- |
+| `blacklist`   | Uncapped | Threat intel blacklist matches                       |
+| `threatIntel` | 30       | Google Safe Browsing hits                            |
+| `domainAge`   | 20       | Young domains, typosquatting, homographs             |
+| `ssl`         | 10       | Certificate issues                                   |
+| `auth`        | 15       | SPF/DKIM/DMARC failures (+5 bonus if all three fail) |
+| `social`      | 15       | Display name / Reply-To mismatches                   |
+| `url`         | 5        | Redirect chains, shorteners                          |
+| `ai`          | 15       | Gemini-detected indicators                           |
+| `whitelist`   | –20      | Sender domain in top-1M whitelist (reduces score)    |
 
 **Hard override:** If both blacklist AND Safe Browsing fire → score is forced to **100**.
 
@@ -322,10 +326,10 @@ Simplified scoring — only `blacklist`, `threatIntel` (cap 30), `domainAge` (ca
 
 ## Scan Modes
 
-| Mode | Trigger | AI Analysis | Header Checks | Link Checks |
-|---|---|---|---|---|
-| **Full Email** | `bodyHtml` or `bodyText` present | ✅ | ✅ | ✅ |
-| **Link-Only** | Only `links[]` provided, no body | ❌ | ❌ | ✅ |
+| Mode           | Trigger                          | AI Analysis | Header Checks | Link Checks |
+| -------------- | -------------------------------- | ----------- | ------------- | ----------- |
+| **Full Email** | `bodyHtml` or `bodyText` present | ✅          | ✅            | ✅          |
+| **Link-Only**  | Only `links[]` provided, no body | ❌          | ❌            | ✅          |
 
 The mode is auto-detected by `EmailRequest.hasBodyContent()`.
 
@@ -337,11 +341,12 @@ All endpoints are under `/api/phishing` and require a valid JWT `Authorization: 
 
 ### Scanning
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
+| Method | Path                                    | Auth        | Description                                              |
+| ------ | --------------------------------------- | ----------- | -------------------------------------------------------- |
 | `POST` | `/api/phishing/scan?forceRefresh=false` | USER, ADMIN | Run a phishing scan. Returns cached result if available. |
 
 **Request body (`EmailRequest`):**
+
 ```json
 {
   "subject": "Urgent: Verify your account",
@@ -354,36 +359,35 @@ All endpoints are under `/api/phishing` and require a valid JWT `Authorization: 
     "From": ["PayPal Security <security@paypa1.com>"],
     "Reply-To": ["reply@suspicious.com"]
   },
-  "links": [
-    { "href": "https://evil.com/login", "text": "Verify Account" }
-  ]
+  "links": [{ "href": "https://evil.com/login", "text": "Verify Account" }]
 }
 ```
 
 ### Reports
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `GET` | `/api/phishing/reports/{id}` | USER, ADMIN | Fetch a single report by Firestore ID |
-| `GET` | `/api/phishing/reports?limit=20` | ADMIN only | List recent reports (max 100) |
+| Method | Path                             | Auth        | Description                           |
+| ------ | -------------------------------- | ----------- | ------------------------------------- |
+| `GET`  | `/api/phishing/reports/{id}`     | USER, ADMIN | Fetch a single report by Firestore ID |
+| `GET`  | `/api/phishing/reports?limit=20` | ADMIN only  | List recent reports (max 100)         |
 
 ### History
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `GET` | `/api/phishing/history?limit=20&cursor=...` | USER, ADMIN | Paginated scan history for the authenticated user |
-| `GET` | `/api/phishing/history/{historyId}` | USER, ADMIN | Get a single history entry (owner-only) |
-| `DELETE` | `/api/phishing/history/{historyId}` | USER, ADMIN | Soft-delete a history entry (owner-only) |
+| Method   | Path                                        | Auth        | Description                                       |
+| -------- | ------------------------------------------- | ----------- | ------------------------------------------------- |
+| `GET`    | `/api/phishing/history?limit=20&cursor=...` | USER, ADMIN | Paginated scan history for the authenticated user |
+| `GET`    | `/api/phishing/history/{historyId}`         | USER, ADMIN | Get a single history entry (owner-only)           |
+| `DELETE` | `/api/phishing/history/{historyId}`         | USER, ADMIN | Soft-delete a history entry (owner-only)          |
 
 ### Flagging
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `POST` | `/api/phishing/reports/{reportId}/flags` | USER, ADMIN | Flag an entire report |
-| `POST` | `/api/phishing/reports/{reportId}/findings/{findingId}/flags` | USER, ADMIN | Flag a specific finding |
-| `GET` | `/api/phishing/flags/mine?limit=20&cursor=...` | USER, ADMIN | List your own flags (paginated) |
+| Method | Path                                                          | Auth        | Description                     |
+| ------ | ------------------------------------------------------------- | ----------- | ------------------------------- |
+| `POST` | `/api/phishing/reports/{reportId}/flags`                      | USER, ADMIN | Flag an entire report           |
+| `POST` | `/api/phishing/reports/{reportId}/findings/{findingId}/flags` | USER, ADMIN | Flag a specific finding         |
+| `GET`  | `/api/phishing/flags/mine?limit=20&cursor=...`                | USER, ADMIN | List your own flags (paginated) |
 
 **Flag request body:**
+
 ```json
 {
   "reasonCode": "FALSE_POSITIVE",
@@ -395,12 +399,12 @@ All endpoints are under `/api/phishing` and require a valid JWT `Authorization: 
 
 ## Firestore Data Model
 
-| Collection | Document Key | Purpose |
-|---|---|---|
-| `phishingReports` | Auto-generated | Full scan reports with sections, findings, AI analysis |
-| `scan_cache` | SHA-256 fingerprint | Cached scan results with TTL and hit metrics |
-| `user_scan_history` | Auto-generated | Per-user scan log with soft-delete support |
-| `scan_flags` | Auto-generated | User-submitted flags on reports/findings |
+| Collection          | Document Key        | Purpose                                                |
+| ------------------- | ------------------- | ------------------------------------------------------ |
+| `phishingReports`   | Auto-generated      | Full scan reports with sections, findings, AI analysis |
+| `scan_cache`        | SHA-256 fingerprint | Cached scan results with TTL and hit metrics           |
+| `user_scan_history` | Auto-generated      | Per-user scan log with soft-delete support             |
+| `scan_flags`        | Auto-generated      | User-submitted flags on reports/findings               |
 
 Firebase is **optional** — all Firestore services use `ObjectProvider<Firestore>` and gracefully degrade to no-ops when `firebase.enabled=false`.
 
@@ -429,13 +433,13 @@ Tokens are issued by an external Flask auth service and validated by this backen
 
 `GlobalExceptionHandler` maps domain exceptions to HTTP status codes:
 
-| Exception | HTTP Status |
-|---|---|
+| Exception                         | HTTP Status                 |
+| --------------------------------- | --------------------------- |
 | `MethodArgumentNotValidException` | 400 — with per-field errors |
-| `ResourceNotFoundException` | 404 |
-| `AccessDeniedException` | 403 |
-| `ConflictException` | 409 (duplicate flag) |
-| `PersistenceUnavailableException` | 503 |
+| `ResourceNotFoundException`       | 404                         |
+| `AccessDeniedException`           | 403                         |
+| `ConflictException`               | 409 (duplicate flag)        |
+| `PersistenceUnavailableException` | 503                         |
 
 ---
 
@@ -595,13 +599,13 @@ jwt.secret=a_dev_secret_that_is_at_least_32_bytes_long!!
 
 Existing test coverage:
 
-| Test Class | What it covers |
-|---|---|
-| `PhishingScannerControllerSecurityTest` | Authorization rules, role-based access |
-| `FirestoreScanCacheServiceTest` | Cache get/save/hit-recording |
-| `FirestoreScanFlagServiceTest` | Flag creation, duplicate rejection, validation |
-| `FirestoreScanHistoryServiceTest` | History CRUD, soft-delete, owner-only access |
-| `ScanResponseMapperTest` | Internal model → DTO mapping |
+| Test Class                              | What it covers                                 |
+| --------------------------------------- | ---------------------------------------------- |
+| `PhishingScannerControllerSecurityTest` | Authorization rules, role-based access         |
+| `FirestoreScanCacheServiceTest`         | Cache get/save/hit-recording                   |
+| `FirestoreScanFlagServiceTest`          | Flag creation, duplicate rejection, validation |
+| `FirestoreScanHistoryServiceTest`       | History CRUD, soft-delete, owner-only access   |
+| `ScanResponseMapperTest`                | Internal model → DTO mapping                   |
 
 A **Postman collection** is included at `Phishing_Scanner_API.postman_collection.json` — import it for manual API testing. See `POSTMAN_TESTING_GUIDE.md` for walkthrough.
 

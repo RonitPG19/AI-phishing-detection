@@ -20,12 +20,12 @@
 
 This backend is part of a multi-layered AI-powered phishing email detection system. It receives email data (subject, sender, body, headers, and embedded URLs) from a browser extension frontend and performs **11 distinct analysis checks** across four categories:
 
-| Category | Checks Performed |
-|----------|-----------------|
-| **Threat Intelligence** | Blacklist lookup (OpenPhish, PhishTank), Google Safe Browsing API |
+| Category                  | Checks Performed                                                                                                                   |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| **Threat Intelligence**   | Blacklist lookup (OpenPhish, PhishTank), Google Safe Browsing API                                                                  |
 | **Domain & URL Analysis** | Domain age (WHOIS), SSL certificate inspection, typosquatting detection, homograph/IDN attack detection, redirect chain resolution |
-| **Email Authentication** | SPF, DKIM, DMARC validation, display-name brand impersonation, Reply-To vs From mismatch |
-| **AI Semantic Analysis** | Google Gemini LLM-based social engineering detection |
+| **Email Authentication**  | SPF, DKIM, DMARC validation, display-name brand impersonation, Reply-To vs From mismatch                                           |
+| **AI Semantic Analysis**  | Google Gemini LLM-based social engineering detection                                                                               |
 
 All findings are combined into a **weighted risk score (0–100)** with per-category caps to prevent any single signal from dominating the verdict. Results are persisted to **Google Cloud Firestore** for historical tracking and retrieval.
 
@@ -35,42 +35,42 @@ All findings are combined into a **weighted risk score (0–100)** with per-cate
 
 ### Language & Runtime
 
-| Component | Version |
-|-----------|---------|
-| **Java** | 21 (LTS) |
-| **Spring Boot** | 4.0.4 |
-| **Build Tool** | Maven (via Maven Wrapper `mvnw`) |
+| Component       | Version                          |
+| --------------- | -------------------------------- |
+| **Java**        | 21 (LTS)                         |
+| **Spring Boot** | 4.0.4                            |
+| **Build Tool**  | Maven (via Maven Wrapper `mvnw`) |
 
 ### Key Dependencies
 
-| Dependency | Purpose |
-|------------|---------|
-| `spring-boot-starter-webmvc` | REST API framework (controllers, request handling, JSON serialization) |
-| `spring-boot-starter-validation` | Bean validation with Jakarta Validation annotations (`@NotBlank`, `@Email`, `@Size`) |
-| `spring-boot-starter-actuator` | Health checks, metrics, and application monitoring endpoints |
+| Dependency                        | Purpose                                                                                                            |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `spring-boot-starter-webmvc`      | REST API framework (controllers, request handling, JSON serialization)                                             |
+| `spring-boot-starter-validation`  | Bean validation with Jakarta Validation annotations (`@NotBlank`, `@Email`, `@Size`)                               |
+| `spring-boot-starter-actuator`    | Health checks, metrics, and application monitoring endpoints                                                       |
 | `spring-ai-jsoup-document-reader` | HTML parsing via Jsoup — used for extracting URLs from HTML email bodies and stripping HTML for plaintext analysis |
-| `firebase-admin` (v9.3.0) | Google Firebase Admin SDK — Cloud Firestore integration for persisting scan reports |
-| `jackson-databind` | JSON serialization/deserialization for API requests/responses and Gemini API communication |
-| `netty-tcnative-boringssl-static` | Native TLS support for gRPC connections to Firebase/Cloud services |
-| `spring-boot-devtools` | Hot-reload during development (runtime-only) |
+| `firebase-admin` (v9.3.0)         | Google Firebase Admin SDK — Cloud Firestore integration for persisting scan reports                                |
+| `jackson-databind`                | JSON serialization/deserialization for API requests/responses and Gemini API communication                         |
+| `netty-tcnative-boringssl-static` | Native TLS support for gRPC connections to Firebase/Cloud services                                                 |
+| `spring-boot-devtools`            | Hot-reload during development (runtime-only)                                                                       |
 
 ### External APIs & Services
 
-| Service | Role |
-|---------|------|
+| Service                                                 | Role                                                                                        |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | **Google Gemini API** (`gemini-3.1-flash-lite-preview`) | LLM-based semantic analysis of email content for social engineering, urgency, impersonation |
-| **Google Safe Browsing API** (v4) | Checks URLs against Google's real-time database of malware and social engineering sites |
-| **OpenPhish Feed** | Community-curated phishing URL blacklist, refreshed every 24 hours |
-| **PhishTank Feed** | Verified phishing URL database in CSV format, refreshed every 24 hours |
-| **WHOIS Protocol** (RFC 3912) | Domain creation date lookups via direct TCP socket connections to WHOIS servers |
-| **Google Cloud Firestore** | NoSQL document database for persisting scan reports |
+| **Google Safe Browsing API** (v4)                       | Checks URLs against Google's real-time database of malware and social engineering sites     |
+| **OpenPhish Feed**                                      | Community-curated phishing URL blacklist, refreshed every 24 hours                          |
+| **PhishTank Feed**                                      | Verified phishing URL database in CSV format, refreshed every 24 hours                      |
+| **WHOIS Protocol** (RFC 3912)                           | Domain creation date lookups via direct TCP socket connections to WHOIS servers             |
+| **Google Cloud Firestore**                              | NoSQL document database for persisting scan reports                                         |
 
 ### External Data Files
 
-| File | Source | Purpose |
-|------|--------|---------|
-| `top-1m-Tranco.csv` | [Tranco List](https://tranco-list.eu/) | Top 1 million most popular domains — used for typosquatting comparison and sender whitelisting |
-| `top-1m-umbrella.csv` | [Cisco Umbrella](https://umbrella.cisco.com/) | Top 1 million domains by DNS popularity — supplementary trusted domain list |
+| File                  | Source                                        | Purpose                                                                                        |
+| --------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `top-1m-Tranco.csv`   | [Tranco List](https://tranco-list.eu/)        | Top 1 million most popular domains — used for typosquatting comparison and sender whitelisting |
+| `top-1m-umbrella.csv` | [Cisco Umbrella](https://umbrella.cisco.com/) | Top 1 million domains by DNS popularity — supplementary trusted domain list                    |
 
 ---
 
@@ -96,11 +96,11 @@ The backend follows a layered architecture with a single orchestration service (
                                     │
                                     ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
-│ Orchestration Layer                                                     │
-│ `PhishingScannerService`                                                │
+│ Orchestration Layer                                                      │
+│ `PhishingScannerService`                                                 │
 │ - Executes detection pipeline in deterministic order                     │
-│ - Aggregates findings by category                                       │
-│ - Applies weighted scoring + overrides                                  │
+│ - Aggregates findings by category                                        │
+│ - Applies weighted scoring + overrides                                   │
 └───────────────┬───────────────────────┬───────────────────────┬──────────┘
                 │                       │                       │
                 ▼                       ▼                       ▼
@@ -209,11 +209,11 @@ To improve maintainability as the project grows, evolve from a single large orch
 
 The following ADR-style summary captures key production-impacting decisions.
 
-| ADR ID | Decision | Status | Why This Decision | Trade-offs |
-|-------|----------|--------|-------------------|------------|
-| ADR-001 | Use capped category scoring with uncapped blacklist and hard override | Accepted | Prevents weak signals (e.g., shorteners/new certs) from dominating while ensuring high-confidence signals can decisively classify phishing | Requires careful weight calibration over time; may under-score novel attacks that do not hit strong-signal categories |
-| ADR-002 | Fail-open scan response for external dependency failures | Accepted | User still receives a scan verdict even if Gemini, Safe Browsing, threat feed refresh, or Firestore is temporarily unavailable | Can reduce detection quality during outages; requires clear observability to know when degraded mode is active |
-| ADR-003 | AI as assistive signal with fallback to rule-based engine | Accepted | Keeps AI valuable for semantic/social-engineering detection but prevents LLM instability from becoming a single point of failure | Some nuanced phishing may be missed when AI is unavailable; added complexity from retry/backoff and null-safe handling |
+| ADR ID  | Decision                                                              | Status   | Why This Decision                                                                                                                          | Trade-offs                                                                                                             |
+| ------- | --------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| ADR-001 | Use capped category scoring with uncapped blacklist and hard override | Accepted | Prevents weak signals (e.g., shorteners/new certs) from dominating while ensuring high-confidence signals can decisively classify phishing | Requires careful weight calibration over time; may under-score novel attacks that do not hit strong-signal categories  |
+| ADR-002 | Fail-open scan response for external dependency failures              | Accepted | User still receives a scan verdict even if Gemini, Safe Browsing, threat feed refresh, or Firestore is temporarily unavailable             | Can reduce detection quality during outages; requires clear observability to know when degraded mode is active         |
+| ADR-003 | AI as assistive signal with fallback to rule-based engine             | Accepted | Keeps AI valuable for semantic/social-engineering detection but prevents LLM instability from becoming a single point of failure           | Some nuanced phishing may be missed when AI is unavailable; added complexity from retry/backoff and null-safe handling |
 
 **Review cadence:** Revisit these ADRs whenever scoring thresholds, external integrations, or uptime/SLO targets change.
 
@@ -229,23 +229,23 @@ The Spring Boot main class. Annotated with `@EnableScheduling` to support schedu
 
 Defines the structure of the incoming scan request with Jakarta Bean Validation:
 
-| Field | Type | Validation | Description |
-|-------|------|------------|-------------|
-| `subject` | `String` | `@Size(max=500)` | Email subject line |
-| `from` | `String` | `@NotBlank`, `@Email` | Sender email address (required) |
-| `bodyHtml` | `String` | `@Size(max=500_000)` | HTML body of the email |
-| `bodyText` | `String` | `@Size(max=500_000)` | Plaintext body of the email |
-| `headers` | `Map<String, List<String>>` | — | Raw email headers (Authentication-Results, From, Reply-To, etc.) |
+| Field      | Type                        | Validation            | Description                                                      |
+| ---------- | --------------------------- | --------------------- | ---------------------------------------------------------------- |
+| `subject`  | `String`                    | `@Size(max=500)`      | Email subject line                                               |
+| `from`     | `String`                    | `@NotBlank`, `@Email` | Sender email address (required)                                  |
+| `bodyHtml` | `String`                    | `@Size(max=500_000)`  | HTML body of the email                                           |
+| `bodyText` | `String`                    | `@Size(max=500_000)`  | Plaintext body of the email                                      |
+| `headers`  | `Map<String, List<String>>` | —                     | Raw email headers (Authentication-Results, From, Reply-To, etc.) |
 
 ### 4.3 `PhishingScannerController.java` — REST API Controller
 
 Exposes three endpoints under `/api/phishing`:
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/scan` | `POST` | Accepts an `EmailRequest`, runs the full analysis pipeline, persists the report, returns the scan result |
-| `/reports/{id}` | `GET` | Retrieves a specific saved report by Firestore document ID |
-| `/reports` | `GET` | Lists recent reports (accepts `?limit=N`, default 20, max 100) |
+| Endpoint        | Method | Description                                                                                              |
+| --------------- | ------ | -------------------------------------------------------------------------------------------------------- |
+| `/scan`         | `POST` | Accepts an `EmailRequest`, runs the full analysis pipeline, persists the report, returns the scan result |
+| `/reports/{id}` | `GET`  | Retrieves a specific saved report by Firestore document ID                                               |
+| `/reports`      | `GET`  | Lists recent reports (accepts `?limit=N`, default 20, max 100)                                           |
 
 Input validation is enforced via `@Valid` on the request body. Validation errors are handled by `GlobalExceptionHandler`, which returns structured JSON error responses with field-level messages.
 
@@ -253,27 +253,27 @@ Input validation is enforced via `@Valid` on the request body. Validation errors
 
 This is the heart of the system. It orchestrates the entire detection pipeline:
 
-| Method | Responsibility |
-|--------|---------------|
-| `scanEmail()` | Main entry point — runs all checks, collects findings, calculates score |
-| `extractUrlsFromHtml()` / `extractUrlsFromPlainText()` | Extracts URLs from email body using Jsoup (HTML) or regex (plaintext) |
-| `inspectAuthenticationHeaders()` | Parses `Authentication-Results` header for SPF, DKIM, DMARC failures |
-| `detectDisplayNameMismatch()` | Checks if display name contains a brand name (e.g., "PayPal") but the sender domain doesn't match |
-| `detectReplyToMismatch()` | Flags when `Reply-To` domain differs from `From` domain |
-| `inspectHomographDomains()` | Detects non-ASCII characters in domains (IDN homograph attacks) using `java.net.IDN` |
-| `inspectDomainAges()` | Performs WHOIS lookups via raw TCP socket to determine domain creation date |
-| `inspectTyposquatting()` | Compares extracted domains against Tranco/Umbrella top-1M using Levenshtein distance |
-| `inspectSslCertificates()` | Connects to HTTPS URLs, inspects X.509 certificate age and issuer |
-| `calculateRiskScore()` | Computes the final 0–100 risk score (see [Section 6](#6-weighted-risk-scoring-engine)) |
+| Method                                                 | Responsibility                                                                                    |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `scanEmail()`                                          | Main entry point — runs all checks, collects findings, calculates score                           |
+| `extractUrlsFromHtml()` / `extractUrlsFromPlainText()` | Extracts URLs from email body using Jsoup (HTML) or regex (plaintext)                             |
+| `inspectAuthenticationHeaders()`                       | Parses `Authentication-Results` header for SPF, DKIM, DMARC failures                              |
+| `detectDisplayNameMismatch()`                          | Checks if display name contains a brand name (e.g., "PayPal") but the sender domain doesn't match |
+| `detectReplyToMismatch()`                              | Flags when `Reply-To` domain differs from `From` domain                                           |
+| `inspectHomographDomains()`                            | Detects non-ASCII characters in domains (IDN homograph attacks) using `java.net.IDN`              |
+| `inspectDomainAges()`                                  | Performs WHOIS lookups via raw TCP socket to determine domain creation date                       |
+| `inspectTyposquatting()`                               | Compares extracted domains against Tranco/Umbrella top-1M using Levenshtein distance              |
+| `inspectSslCertificates()`                             | Connects to HTTPS URLs, inspects X.509 certificate age and issuer                                 |
+| `calculateRiskScore()`                                 | Computes the final 0–100 risk score (see [Section 6](#6-weighted-risk-scoring-engine))            |
 
 **Inner types defined in this class:**
 
-| Type | Purpose |
-|------|---------|
-| `Severity` (enum) | `LOW(5)`, `MEDIUM(15)`, `HIGH(25)` — base score contributions |
-| `RiskFinding` | Immutable record of a single finding: target, description, severity, scoreContribution |
-| `HeaderInspectionResult` | Tracks SPF/DKIM/DMARC failures AND display-name/Reply-To mismatches |
-| `EmailContent` | Builder for HTML/plaintext body content |
+| Type                       | Purpose                                                                                                         |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `Severity` (enum)          | `LOW(5)`, `MEDIUM(15)`, `HIGH(25)` — base score contributions                                                   |
+| `RiskFinding`              | Immutable record of a single finding: target, description, severity, scoreContribution                          |
+| `HeaderInspectionResult`   | Tracks SPF/DKIM/DMARC failures AND display-name/Reply-To mismatches                                             |
+| `EmailContent`             | Builder for HTML/plaintext body content                                                                         |
 | `EmailScanReport` (record) | The final output: subject, sender, urlCount, findings, headerInspection, overallRiskScore, reportId, aiAnalysis |
 
 ### 4.5 `RedirectChainResolver.java` — URL Redirect Chain Resolution
@@ -301,6 +301,7 @@ Manages phishing URL blacklists from external threat intelligence feeds. See [Se
 Loads the top domains from Tranco and Umbrella CSV files and provides a whitelist check for sender domains. Whitelisted senders receive a score reduction (−15 points) to lower false positives for emails from well-known organizations.
 
 **Key design decisions:**
+
 - **Free-email exclusion:** Domains like `gmail.com`, `yahoo.com`, `outlook.com` are explicitly excluded from the whitelist since anyone can create a free email account — these provide no trust signal.
 - **Configurable limits:** `max-candidates` (how many CSV rows to scan) and `max-domains` (how many to keep) are configurable to balance memory usage vs coverage.
 
@@ -341,6 +342,7 @@ When an email is submitted to `/api/phishing/scan`, the following steps execute 
 ### Step 2: Redirect Chain Resolution
 
 For each extracted URL:
+
 1. The `RedirectChainResolver` follows the redirect chain (up to 10 hops).
 2. The final destination URL is added to the URL set for further analysis.
 3. Findings are generated for:
@@ -351,6 +353,7 @@ For each extracted URL:
 ### Step 3: Email Header Authentication Analysis
 
 Parses the `Authentication-Results` header to detect:
+
 - **SPF failure** → `MEDIUM` severity (sender IP not authorized)
 - **DKIM failure** → `MEDIUM` severity (message integrity compromised)
 - **DMARC failure** → `MEDIUM` severity (domain alignment policy violated)
@@ -366,6 +369,7 @@ Every URL (original + resolved) is checked against the locally cached blacklist 
 ### Step 5: Google Safe Browsing API Check
 
 All URLs are batch-submitted to Google Safe Browsing v4 API, checking for:
+
 - `MALWARE` → `HIGH` severity
 - `SOCIAL_ENGINEERING` → `HIGH` severity
 
@@ -376,6 +380,7 @@ Each domain is checked for non-ASCII characters using `java.net.IDN.toASCII()`. 
 ### Step 7: Domain Age Analysis (WHOIS)
 
 For each unique root domain extracted from URLs:
+
 1. A raw TCP socket connection is made to `whois.iana.org` on port 43.
 2. If a referral server is returned, a second query is made to the authoritative WHOIS server.
 3. The creation date is parsed using multiple date format patterns (ISO 8601, various regional formats).
@@ -385,6 +390,7 @@ For each unique root domain extracted from URLs:
 ### Step 8: Typosquatting Detection
 
 Each extracted domain is compared against the Tranco + Umbrella top-1M domain lists using the **Levenshtein distance** algorithm:
+
 - If the domain is an **exact match** → skip (it's legitimate).
 - If the edit distance is **≤ 3** → flag as potential typosquatting of the trusted domain → `MEDIUM` severity.
 
@@ -393,6 +399,7 @@ Example: `arnazon.com` (edit distance 1 from `amazon.com`) would be flagged.
 ### Step 9: SSL Certificate Inspection
 
 For each HTTPS URL:
+
 1. An HTTPS connection is established and the server's X.509 certificate is retrieved.
 2. **Certificate age**: If the certificate was issued less than **15 days** ago → `LOW` severity.
 3. **Let's Encrypt + new domain**: If the certificate is from Let's Encrypt AND the domain is less than **30 days** old → `MEDIUM` severity (attackers commonly use free Let's Encrypt certs on throwaway domains).
@@ -415,27 +422,27 @@ The sender's root domain is checked against the whitelist. If whitelisted, the s
 
 Every finding is assigned one of three severity levels, each with a base score contribution:
 
-| Severity | Base Score | Use Cases |
-|----------|-----------|-----------|
-| **LOW** | 5 points | New SSL certificate, shortener usage, Reply-To mismatch, unresolvable host |
-| **MEDIUM** | 15 points | SPF/DKIM/DMARC failure, young domain, typosquatting, display-name impersonation, long redirect chains |
-| **HIGH** | 25 points | Blacklisted URL, Safe Browsing threat, homograph attack, SSL handshake failure |
+| Severity   | Base Score | Use Cases                                                                                             |
+| ---------- | ---------- | ----------------------------------------------------------------------------------------------------- |
+| **LOW**    | 5 points   | New SSL certificate, shortener usage, Reply-To mismatch, unresolvable host                            |
+| **MEDIUM** | 15 points  | SPF/DKIM/DMARC failure, young domain, typosquatting, display-name impersonation, long redirect chains |
+| **HIGH**   | 25 points  | Blacklisted URL, Safe Browsing threat, homograph attack, SSL handshake failure                        |
 
 ### 6.2 Score Categories & Caps
 
 To prevent any single category from dominating the overall risk score, each category has a **maximum contribution cap**:
 
-| Category | Includes | Cap | Rationale |
-|----------|----------|-----|-----------|
-| **Blacklist** | URLs found in OpenPhish/PhishTank blacklists | **Uncapped** | A verified blacklist hit is definitive evidence; no cap needed |
-| **Threat Intel** | Google Safe Browsing matches | **30** | Strong signal but can have false positives on shared hosting |
-| **Domain** | Domain age, typosquatting, homograph detection | **20** | Important but shouldn't alone condemn an email (new legitimate businesses exist) |
-| **SSL** | Certificate age, validation failure, Let's Encrypt on new domains | **10** | Supplementary signal; many legitimate sites have new/free certs |
-| **Auth** | SPF, DKIM, DMARC failures | **15** | Meaningful but some legitimate senders have misconfigured records |
-| **Social** | Display-name brand impersonation, Reply-To mismatch | **15** | Behavioral signal; useful but can occur in legitimate forwarded emails |
-| **URL Behavior** | Redirect chain length, shortener usage, domain change through redirect | **5** | Weak signal on its own; shorteners are widely used in legitimate marketing |
-| **AI** | All findings from Gemini LLM analysis | **15** | LLMs can hallucinate; capping prevents overreliance on AI judgment |
-| **Whitelist** | Sender domain found in Tranco/Umbrella top-1M | **−20** (max reduction) | Lowers false positives for well-known organizations |
+| Category         | Includes                                                               | Cap                     | Rationale                                                                        |
+| ---------------- | ---------------------------------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------- |
+| **Blacklist**    | URLs found in OpenPhish/PhishTank blacklists                           | **Uncapped**            | A verified blacklist hit is definitive evidence; no cap needed                   |
+| **Threat Intel** | Google Safe Browsing matches                                           | **30**                  | Strong signal but can have false positives on shared hosting                     |
+| **Domain**       | Domain age, typosquatting, homograph detection                         | **20**                  | Important but shouldn't alone condemn an email (new legitimate businesses exist) |
+| **SSL**          | Certificate age, validation failure, Let's Encrypt on new domains      | **10**                  | Supplementary signal; many legitimate sites have new/free certs                  |
+| **Auth**         | SPF, DKIM, DMARC failures                                              | **15**                  | Meaningful but some legitimate senders have misconfigured records                |
+| **Social**       | Display-name brand impersonation, Reply-To mismatch                    | **15**                  | Behavioral signal; useful but can occur in legitimate forwarded emails           |
+| **URL Behavior** | Redirect chain length, shortener usage, domain change through redirect | **5**                   | Weak signal on its own; shorteners are widely used in legitimate marketing       |
+| **AI**           | All findings from Gemini LLM analysis                                  | **15**                  | LLMs can hallucinate; capping prevents overreliance on AI judgment               |
+| **Whitelist**    | Sender domain found in Tranco/Umbrella top-1M                          | **−20** (max reduction) | Lowers false positives for well-known organizations                              |
 
 ### 6.3 Scoring Formula
 
@@ -453,19 +460,19 @@ Score = Blacklist (uncapped)
 
 ### 6.4 Bonus & Override Rules
 
-| Rule | Condition | Effect |
-|------|-----------|--------|
-| **Auth triple-failure bonus** | SPF + DKIM + DMARC all fail | +5 points to Auth category (before cap) |
+| Rule                                       | Condition                                                 | Effect                                              |
+| ------------------------------------------ | --------------------------------------------------------- | --------------------------------------------------- |
+| **Auth triple-failure bonus**              | SPF + DKIM + DMARC all fail                               | +5 points to Auth category (before cap)             |
 | **Blacklist + Threat Intel hard override** | URL is in BOTH the blacklist AND flagged by Safe Browsing | Score forced to **100** regardless of other signals |
-| **Floor/Ceiling** | Always applied last | Score clamped to range `[0, 100]` |
+| **Floor/Ceiling**                          | Always applied last                                       | Score clamped to range `[0, 100]`                   |
 
 ### 6.5 Risk Classification
 
-| Score Range | Verdict |
-|-------------|---------|
-| **0–29** | Safe / Low Risk |
-| **30–64** | Suspicious / Medium Risk |
-| **65–100** | High Risk / Likely Phishing |
+| Score Range | Verdict                     |
+| ----------- | --------------------------- |
+| **0–29**    | Safe / Low Risk             |
+| **30–64**   | Suspicious / Medium Risk    |
+| **65–100**  | High Risk / Likely Phishing |
 
 ### 6.6 Why These Weights?
 
@@ -544,28 +551,29 @@ The prompt enforces **strict JSON-only output** with no markdown wrapping, thoug
 The Gemini integration implements **exponential backoff** retry logic to handle transient API failures:
 
 | Attempt | Delay Before Retry |
-|---------|-------------------|
-| 1st | Immediate |
-| 2nd | 1,000ms (1s) |
-| 3rd | 2,000ms (2s) |
+| ------- | ------------------ |
+| 1st     | Immediate          |
+| 2nd     | 1,000ms (1s)       |
+| 3rd     | 2,000ms (2s)       |
 
 If all 3 attempts fail, the AI analysis is skipped (returns `null`) and the scan continues with rule-based findings only. The system never blocks or fails the entire scan due to LLM unavailability.
 
 ### 7.4 Why `temperature=0.1`?
 
 A near-zero temperature produces highly deterministic outputs. For security classification:
+
 - **Consistency matters** — the same email should produce the same verdict every time.
 - **Creativity is harmful** — we don't want the LLM to "imagine" phishing indicators that aren't there.
 - A small non-zero value (0.1 vs 0.0) allows slight variation to avoid degenerate token selection while remaining essentially deterministic.
 
 ### 7.5 Why Gemini Flash-Lite?
 
-| Factor | Reasoning |
-|--------|-----------|
-| **Latency** | Flash-Lite is Google's fastest model — critical for a real-time scanner |
-| **Cost** | Significantly cheaper than Pro/Ultra models; phishing classification doesn't need reasoning depth of larger models |
-| **Accuracy** | Classification and pattern recognition (vs open-ended generation) is well-suited to lighter models |
-| **Token limit** | Email bodies are short; 8K input + 1K output is well within Flash-Lite's context window |
+| Factor          | Reasoning                                                                                                          |
+| --------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **Latency**     | Flash-Lite is Google's fastest model — critical for a real-time scanner                                            |
+| **Cost**        | Significantly cheaper than Pro/Ultra models; phishing classification doesn't need reasoning depth of larger models |
+| **Accuracy**    | Classification and pattern recognition (vs open-ended generation) is well-suited to lighter models                 |
+| **Token limit** | Email bodies are short; 8K input + 1K output is well within Flash-Lite's context window                            |
 
 ---
 
@@ -573,10 +581,10 @@ A near-zero temperature produces highly deterministic outputs. For security clas
 
 ### 8.1 Feed Sources
 
-| Feed | URL | Update Frequency | Format |
-|------|-----|------------------|--------|
-| **OpenPhish** | `https://openphish.com/feed.txt` | Every 24 hours | One URL per line |
-| **PhishTank** | `http://data.phishtank.com/data/online-valid.csv` | Every 24 hours | CSV (phish_id, url, ...) |
+| Feed          | URL                                               | Update Frequency | Format                   |
+| ------------- | ------------------------------------------------- | ---------------- | ------------------------ |
+| **OpenPhish** | `https://openphish.com/feed.txt`                  | Every 24 hours   | One URL per line         |
+| **PhishTank** | `http://data.phishtank.com/data/online-valid.csv` | Every 24 hours   | CSV (phish_id, url, ...) |
 
 ### 8.2 Lifecycle
 
@@ -656,11 +664,11 @@ Each scan report is stored as a Firestore document in the `phishingReports` coll
 
 Firestore writes use exponential backoff (3 attempts, starting at 500ms):
 
-| Attempt | Delay |
-|---------|-------|
-| 1st | Immediate |
-| 2nd | 500ms |
-| 3rd | 1,000ms |
+| Attempt | Delay     |
+| ------- | --------- |
+| 1st     | Immediate |
+| 2nd     | 500ms     |
+| 3rd     | 1,000ms   |
 
 If all retries fail, the report ID is returned as `null` — the scan result is still returned to the user, just not persisted. **Database failures never block the scan response.**
 
@@ -678,33 +686,33 @@ Runs the full phishing scan pipeline and returns the computed report.
 
 **HTTP requirements**
 
-| Item | Value |
-|------|-------|
-| Method | `POST` |
-| Path | `/api/phishing/scan` |
-| `Content-Type` | `application/json` |
-| Auth | None (as currently implemented) |
+| Item           | Value                           |
+| -------------- | ------------------------------- |
+| Method         | `POST`                          |
+| Path           | `/api/phishing/scan`            |
+| `Content-Type` | `application/json`              |
+| Auth           | None (as currently implemented) |
 
 **Request body keys (`EmailRequest`)**
 
-| Key | Required | Type | Constraints / Validation | Example | Notes |
-|-----|----------|------|--------------------------|---------|-------|
-| `from` | Yes | `string` | Must be non-empty and a valid email format (`@NotBlank`, `@Email`) | `"alerts@service.com"` | Send plain email address only. |
-| `subject` | No | `string` | Max length `500` (`@Size(max=500)`) | `"Urgent: Verify your account"` | If `null`, backend uses `"(no subject)"`. |
-| `bodyHtml` | No | `string` | Max length `500000` (`@Size(max=500000)`) | `"<html><body>...</body></html>"` | Preferred when HTML email is available. |
-| `bodyText` | No | `string` | Max length `500000` (`@Size(max=500000)`) | `"Click https://example.com"` | Used when HTML is absent. |
-| `headers` | No | `object` (`Map<String, List<String>>`) | JSON object where each key maps to an array of strings | See table below | Analyzer reads specific header names listed below. |
+| Key        | Required | Type                                   | Constraints / Validation                                           | Example                           | Notes                                              |
+| ---------- | -------- | -------------------------------------- | ------------------------------------------------------------------ | --------------------------------- | -------------------------------------------------- |
+| `from`     | Yes      | `string`                               | Must be non-empty and a valid email format (`@NotBlank`, `@Email`) | `"alerts@service.com"`            | Send plain email address only.                     |
+| `subject`  | No       | `string`                               | Max length `500` (`@Size(max=500)`)                                | `"Urgent: Verify your account"`   | If `null`, backend uses `"(no subject)"`.          |
+| `bodyHtml` | No       | `string`                               | Max length `500000` (`@Size(max=500000)`)                          | `"<html><body>...</body></html>"` | Preferred when HTML email is available.            |
+| `bodyText` | No       | `string`                               | Max length `500000` (`@Size(max=500000)`)                          | `"Click https://example.com"`     | Used when HTML is absent.                          |
+| `headers`  | No       | `object` (`Map<String, List<String>>`) | JSON object where each key maps to an array of strings             | See table below                   | Analyzer reads specific header names listed below. |
 
 **`headers` object: accepted input headers in this system**
 
 The backend can receive any header key, but only these keys are currently consumed by analysis logic:
 
-| Header key in JSON | Type | Used for | Required for that check | Expected value shape |
-|--------------------|------|----------|-------------------------|----------------------|
-| `Authentication-Results` | `string[]` | SPF/DKIM/DMARC failure detection | Yes (for SPF/DKIM/DMARC checks) | Example item: `"mx.google.com; spf=fail smtp.mailfrom=...; dkim=fail; dmarc=fail"` |
-| `From` | `string[]` | Display-name brand impersonation check | Yes (for display-name check) | Example item: `"PayPal Security <alerts@paypal.com>"` |
-| `Reply-To` | `string[]` | Reply-To vs From mismatch check | Yes (for reply mismatch check) | Example item: `"support@other-domain.com"` |
-| `Return-Path` | `string[]` | Return-Path vs From mismatch check | Yes (for return-path mismatch check) | Example item: `"<bounce@mailer.other-domain.com>"` |
+| Header key in JSON       | Type       | Used for                               | Required for that check              | Expected value shape                                                               |
+| ------------------------ | ---------- | -------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------- |
+| `Authentication-Results` | `string[]` | SPF/DKIM/DMARC failure detection       | Yes (for SPF/DKIM/DMARC checks)      | Example item: `"mx.google.com; spf=fail smtp.mailfrom=...; dkim=fail; dmarc=fail"` |
+| `From`                   | `string[]` | Display-name brand impersonation check | Yes (for display-name check)         | Example item: `"PayPal Security <alerts@paypal.com>"`                              |
+| `Reply-To`               | `string[]` | Reply-To vs From mismatch check        | Yes (for reply mismatch check)       | Example item: `"support@other-domain.com"`                                         |
+| `Return-Path`            | `string[]` | Return-Path vs From mismatch check     | Yes (for return-path mismatch check) | Example item: `"<bounce@mailer.other-domain.com>"`                                 |
 
 **Important behavior notes for `headers`**
 
@@ -755,16 +763,16 @@ The backend can receive any header key, but only these keys are currently consum
 
 **Success response (`200`) key map**
 
-| Key | Type | Description |
-|-----|------|-------------|
-| `subject` | `string` | Subject used for scanning (or fallback value). |
-| `sender` | `string` | Sender copied from request `from`. |
-| `urlCount` | `number` | Count of unique analyzed URLs after extraction + redirect resolution. |
-| `sections` | `object` | Categorized findings grouped into `Header`, `Subject`, `Body`, `Links`. |
-| `headerInspectionResult` | `object` | Boolean flags: `spfFail`, `dkimFail`, `dmarcFail`, `displayNameMismatch`, `replyToMismatch`, `returnPathMismatch`. |
-| `overallRiskScore` | `number` | Final score in range `0..100`. |
-| `reportId` | `string \| null` | Firestore document ID if persistence succeeds; otherwise `null`. |
-| `aiAnalysis` | `object \| null` | Gemini analysis output when AI is available; otherwise `null`. |
+| Key                      | Type             | Description                                                                                                        |
+| ------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `subject`                | `string`         | Subject used for scanning (or fallback value).                                                                     |
+| `sender`                 | `string`         | Sender copied from request `from`.                                                                                 |
+| `urlCount`               | `number`         | Count of unique analyzed URLs after extraction + redirect resolution.                                              |
+| `sections`               | `object`         | Categorized findings grouped into `Header`, `Subject`, `Body`, `Links`.                                            |
+| `headerInspectionResult` | `object`         | Boolean flags: `spfFail`, `dkimFail`, `dmarcFail`, `displayNameMismatch`, `replyToMismatch`, `returnPathMismatch`. |
+| `overallRiskScore`       | `number`         | Final score in range `0..100`.                                                                                     |
+| `reportId`               | `string \| null` | Firestore document ID if persistence succeeds; otherwise `null`.                                                   |
+| `aiAnalysis`             | `object \| null` | Gemini analysis output when AI is available; otherwise `null`.                                                     |
 
 **Success response example**
 
@@ -848,25 +856,25 @@ Returns an array of the most recent reports, ordered by `savedAt` descending. Li
 
 ### Required Environment Variables / Properties
 
-| Property | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `gemini.api.key` | Yes (for AI) | _(empty)_ | Google Gemini API key. If empty, AI analysis is skipped |
-| `GSB_API_KEY` | Yes (for Safe Browsing) | _(null)_ | Google Safe Browsing API key |
-| `firebase.enabled` | No | `false` | Enable/disable Firestore persistence |
-| `firebase.service-account.path` | If Firebase enabled | — | Path to Firebase service account JSON |
-| `firebase.project-id` | If Firebase enabled | _(empty)_ | GCP project ID |
+| Property                        | Required                | Default   | Description                                             |
+| ------------------------------- | ----------------------- | --------- | ------------------------------------------------------- |
+| `gemini.api.key`                | Yes (for AI)            | _(empty)_ | Google Gemini API key. If empty, AI analysis is skipped |
+| `GSB_API_KEY`                   | Yes (for Safe Browsing) | _(null)_  | Google Safe Browsing API key                            |
+| `firebase.enabled`              | No                      | `false`   | Enable/disable Firestore persistence                    |
+| `firebase.service-account.path` | If Firebase enabled     | —         | Path to Firebase service account JSON                   |
+| `firebase.project-id`           | If Firebase enabled     | _(empty)_ | GCP project ID                                          |
 
 ### Optional Tuning Properties
 
-| Property | Default | Description |
-|----------|---------|-------------|
-| `gemini.timeout.ms` | `30000` | Gemini API timeout in milliseconds |
-| `firebase.firestore.collection` | `phishingReports` | Firestore collection name |
-| `firebase.firestore.timeout.seconds` | `30` | Firestore operation timeout |
-| `scanner.whitelist.max-candidates` | `200` | Max CSV rows to scan for whitelist |
-| `scanner.whitelist.max-domains` | `100` | Max domains to keep in whitelist |
-| `threat-intel.max-age-hours` | `24` | Hours before threat feeds are refreshed |
-| `threat-intel.refresh-check-ms` | `3600000` | How often to check if refresh is needed (ms) |
+| Property                             | Default           | Description                                  |
+| ------------------------------------ | ----------------- | -------------------------------------------- |
+| `gemini.timeout.ms`                  | `30000`           | Gemini API timeout in milliseconds           |
+| `firebase.firestore.collection`      | `phishingReports` | Firestore collection name                    |
+| `firebase.firestore.timeout.seconds` | `30`              | Firestore operation timeout                  |
+| `scanner.whitelist.max-candidates`   | `200`             | Max CSV rows to scan for whitelist           |
+| `scanner.whitelist.max-domains`      | `100`             | Max domains to keep in whitelist             |
+| `threat-intel.max-age-hours`         | `24`              | Hours before threat feeds are refreshed      |
+| `threat-intel.refresh-check-ms`      | `3600000`         | How often to check if refresh is needed (ms) |
 
 ### Quick Start
 
