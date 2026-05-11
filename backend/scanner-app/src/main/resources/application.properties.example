@@ -1,0 +1,50 @@
+spring.application.name=scanner-app
+spring.security.enabled=false
+firebase.enabled=false
+firebase.service-account.path=classpath:tribunal-ai-firebase-adminsdk-fbsvc-0e962519f3.json
+firebase.project-id=
+firebase.firestore.collection=phishingReports
+firebase.firestore.timeout.seconds=30
+scanning.cache.enabled=true
+scanning.cache.ttl=PT24H
+scanning.cache.version=v1
+scanning.history.max-page-size=50
+scanning.flags.max-comment-length=500
+gemini.api.key=
+gemini.timeout.ms=30000
+
+scanner.whitelist.sources=classpath:top-1m-Tranco.csv,classpath:top-1m-umbrella.csv
+scanner.whitelist.max-candidates=200
+scanner.whitelist.max-domains=100
+
+threat-intel.data-directory=data/threat-intel
+threat-intel.openphish-url=https://openphish.com/feed.txt
+threat-intel.phishtank-url=http://data.phishtank.com/data/online-valid.csv
+threat-intel.urlhaus-url=threat-intel.urlhaus-url=https://urlhaus-api.abuse.ch/v2/files/exports/YOUR_AUTH_KEY_HERE/recent_urls.txt
+threat-intel.max-age-hours=24
+threat-intel.refresh-check-ms=3600000
+
+jwt.secret=${JWT_SECRET:my_super_secret_key_which_is_long_enough_123456}
+jwt.expiration=PT24H
+
+# OAuth2 login. Start login at /oauth2/authorization/google.
+# Register this callback in Google Cloud Console:
+# http://localhost:8080/login/oauth2/code/google
+app.oauth2.success-redirect-uri=http://localhost:3000/oauth2/redirect
+spring.security.oauth2.client.registration.google.client-id=${GOOGLE_CLIENT_ID:}
+spring.security.oauth2.client.registration.google.client-secret=${GOOGLE_CLIENT_SECRET:}
+spring.security.oauth2.client.registration.google.scope=openid,email,profile,https://www.googleapis.com/auth/gmail.readonly
+
+# Optional Outlook / Microsoft Graph mailbox connection. Start login at /oauth2/authorization/outlook.
+# Register this callback in Microsoft Entra:
+# http://localhost:8080/login/oauth2/code/outlook
+spring.security.oauth2.client.registration.outlook.client-id=${OUTLOOK_CLIENT_ID:}
+spring.security.oauth2.client.registration.outlook.client-secret=${OUTLOOK_CLIENT_SECRET:}
+spring.security.oauth2.client.registration.outlook.authorization-grant-type=authorization_code
+spring.security.oauth2.client.registration.outlook.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}
+spring.security.oauth2.client.registration.outlook.scope=openid,profile,email,offline_access,User.Read,Mail.Read
+spring.security.oauth2.client.provider.outlook.authorization-uri=https://login.microsoftonline.com/common/oauth2/v2.0/authorize
+spring.security.oauth2.client.provider.outlook.token-uri=https://login.microsoftonline.com/common/oauth2/v2.0/token
+spring.security.oauth2.client.provider.outlook.user-info-uri=https://graph.microsoft.com/oidc/userinfo
+spring.security.oauth2.client.provider.outlook.jwk-set-uri=https://login.microsoftonline.com/common/discovery/v2.0/keys
+spring.security.oauth2.client.provider.outlook.user-name-attribute=sub

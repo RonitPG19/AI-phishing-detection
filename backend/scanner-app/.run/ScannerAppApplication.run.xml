@@ -1,0 +1,20 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="ScannerAppApplication" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot" nameIsGenerated="true">
+    <option name="FRAME_DEACTIVATION_UPDATE_POLICY" value="UnknownPolicyInFreeMode" />
+    <module name="scanner-app" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="com.phishing.scanner_app.ScannerAppApplication" />
+    <extension name="coverage">
+      <pattern>
+        <option name="PATTERN" value="com.phishing.scanner_app.*" />
+        <option name="ENABLED" value="true" />
+      </pattern>
+      <pattern>
+        <option name="PATTERN" value="com.phishing.scanner_app.ScannerAppApplication" />
+        <option name="ENABLED" value="true" />
+      </pattern>
+    </extension>
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

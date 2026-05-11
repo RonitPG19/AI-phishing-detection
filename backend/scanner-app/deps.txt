@@ -1,0 +1,213 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ----------------------< com.phishing:scanner-app >----------------------
+[INFO] Building scanner-app 0.0.1-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- dependency:3.9.0:list (default-cli) @ scanner-app ---
+[INFO] 
+[INFO] The following files have been resolved:
+[INFO]    org.springframework.boot:spring-boot-starter-actuator:jar:4.0.4:compile -- module spring.boot.starter.actuator [auto]
+[INFO]    org.springframework.boot:spring-boot-starter:jar:4.0.4:compile -- module spring.boot.starter [auto]
+[INFO]    org.springframework.boot:spring-boot-starter-logging:jar:4.0.4:compile -- module spring.boot.starter.logging [auto]
+[INFO]    ch.qos.logback:logback-classic:jar:1.5.32:compile -- module ch.qos.logback.classic
+[INFO]    ch.qos.logback:logback-core:jar:1.5.32:compile -- module ch.qos.logback.core
+[INFO]    org.apache.logging.log4j:log4j-to-slf4j:jar:2.25.3:compile -- module org.apache.logging.log4j.to.slf4j
+[INFO]    org.apache.logging.log4j:log4j-api:jar:2.25.3:compile -- module org.apache.logging.log4j
+[INFO]    org.slf4j:jul-to-slf4j:jar:2.0.17:compile -- module jul.to.slf4j
+[INFO]    jakarta.annotation:jakarta.annotation-api:jar:3.0.0:compile -- module jakarta.annotation
+[INFO]    org.yaml:snakeyaml:jar:2.5:compile -- module org.yaml.snakeyaml
+[INFO]    org.springframework.boot:spring-boot-starter-micrometer-metrics:jar:4.0.4:compile -- module spring.boot.starter.micrometer.metrics [auto]
+[INFO]    org.springframework.boot:spring-boot-micrometer-metrics:jar:4.0.4:compile -- module spring.boot.micrometer.metrics [auto]
+[INFO]    org.springframework.boot:spring-boot-micrometer-observation:jar:4.0.4:compile -- module spring.boot.micrometer.observation [auto]
+[INFO]    org.springframework.boot:spring-boot-actuator-autoconfigure:jar:4.0.4:compile -- module spring.boot.actuator.autoconfigure [auto]
+[INFO]    org.springframework.boot:spring-boot-actuator:jar:4.0.4:compile -- module spring.boot.actuator [auto]
+[INFO]    org.springframework.boot:spring-boot-health:jar:4.0.4:compile -- module spring.boot.health [auto]
+[INFO]    io.micrometer:micrometer-observation:jar:1.16.4:compile -- module micrometer.observation [auto]
+[INFO]    org.jspecify:jspecify:jar:1.0.0:compile -- module org.jspecify
+[INFO]    io.micrometer:micrometer-commons:jar:1.16.4:compile -- module micrometer.commons [auto]
+[INFO]    io.micrometer:micrometer-jakarta9:jar:1.16.4:compile -- module micrometer.jakarta9 [auto]
+[INFO]    io.micrometer:micrometer-core:jar:1.16.4:compile -- module micrometer.core [auto]
+[INFO]    org.hdrhistogram:HdrHistogram:jar:2.2.2:runtime -- module HdrHistogram (auto)
+[INFO]    org.latencyutils:LatencyUtils:jar:2.0.3:runtime -- module LatencyUtils (auto)
+[INFO]    io.jsonwebtoken:jjwt-api:jar:0.11.5:compile -- module jjwt.api (auto)
+[INFO]    io.jsonwebtoken:jjwt-impl:jar:0.11.5:runtime -- module jjwt.impl (auto)
+[INFO]    io.jsonwebtoken:jjwt-jackson:jar:0.11.5:runtime -- module jjwt.jackson (auto)
+[INFO]    org.springframework.boot:spring-boot-starter-webmvc:jar:4.0.4:compile -- module spring.boot.starter.webmvc [auto]
+[INFO]    org.springframework.boot:spring-boot-starter-jackson:jar:4.0.4:compile -- module spring.boot.starter.jackson [auto]
+[INFO]    org.springframework.boot:spring-boot-jackson:jar:4.0.4:compile -- module spring.boot.jackson [auto]
+[INFO]    org.springframework.boot:spring-boot-starter-tomcat:jar:4.0.4:compile -- module spring.boot.starter.tomcat [auto]
+[INFO]    org.springframework.boot:spring-boot-starter-tomcat-runtime:jar:4.0.4:compile -- module spring.boot.starter.tomcat.runtime [auto]
+[INFO]    org.apache.tomcat.embed:tomcat-embed-core:jar:11.0.18:compile -- module org.apache.tomcat.embed.core
+[INFO]    org.apache.tomcat.embed:tomcat-embed-websocket:jar:11.0.18:compile -- module org.apache.tomcat.embed.websocket
+[INFO]    org.springframework.boot:spring-boot-tomcat:jar:4.0.4:compile -- module spring.boot.tomcat [auto]
+[INFO]    org.springframework.boot:spring-boot-http-converter:jar:4.0.4:compile -- module spring.boot.http.converter [auto]
+[INFO]    org.springframework:spring-web:jar:7.0.6:compile -- module spring.web [auto]
+[INFO]    org.springframework.boot:spring-boot-webmvc:jar:4.0.4:compile -- module spring.boot.webmvc [auto]
+[INFO]    org.springframework.boot:spring-boot-servlet:jar:4.0.4:compile -- module spring.boot.servlet [auto]
+[INFO]    org.springframework:spring-webmvc:jar:7.0.6:compile -- module spring.webmvc [auto]
+[INFO]    org.springframework.boot:spring-boot-starter-security:jar:4.0.4:compile -- module spring.boot.starter.security [auto]
+[INFO]    org.springframework.boot:spring-boot-security:jar:4.0.4:compile -- module spring.boot.security [auto]
+[INFO]    org.springframework.security:spring-security-config:jar:7.0.4:compile -- module spring.security.config [auto]
+[INFO]    org.springframework:spring-aop:jar:7.0.6:compile -- module spring.aop [auto]
+[INFO]    org.springframework:spring-beans:jar:7.0.6:compile -- module spring.beans [auto]
+[INFO]    org.springframework.boot:spring-boot-starter-validation:jar:4.0.4:compile -- module spring.boot.starter.validation [auto]
+[INFO]    org.springframework.boot:spring-boot-validation:jar:4.0.4:compile -- module spring.boot.validation [auto]
+[INFO]    org.apache.tomcat.embed:tomcat-embed-el:jar:11.0.18:compile -- module org.apache.tomcat.embed.el
+[INFO]    org.hibernate.validator:hibernate-validator:jar:9.0.1.Final:compile -- module org.hibernate.validator
+[INFO]    jakarta.validation:jakarta.validation-api:jar:3.1.1:compile -- module jakarta.validation
+[INFO]    org.jboss.logging:jboss-logging:jar:3.6.3.Final:compile -- module org.jboss.logging
+[INFO]    com.fasterxml:classmate:jar:1.7.3:compile -- module com.fasterxml.classmate
+[INFO]    org.springframework.ai:spring-ai-jsoup-document-reader:jar:2.0.0-M3:compile -- module spring.ai.jsoup.document.reader (auto)
+[INFO]    org.springframework.ai:spring-ai-commons:jar:2.0.0-M3:compile -- module spring.ai.commons (auto)
+[INFO]    org.springframework:spring-context:jar:7.0.6:compile -- module spring.context [auto]
+[INFO]    io.micrometer:context-propagation:jar:1.2.1:compile -- module context.propagation [auto]
+[INFO]    tools.jackson.core:jackson-databind:jar:3.1.0:compile -- module tools.jackson.databind
+[INFO]    tools.jackson.core:jackson-core:jar:3.1.0:compile -- module tools.jackson.core
+[INFO]    com.knuddels:jtokkit:jar:1.1.0:compile -- module jtokkit (auto)
+[INFO]    org.jsoup:jsoup:jar:1.21.2:compile -- module org.jsoup
+[INFO]    com.google.firebase:firebase-admin:jar:9.3.0:compile -- module firebase.admin (auto)
+[INFO]    com.google.api-client:google-api-client:jar:2.4.0:compile -- module google.api.client [auto]
+[INFO]    commons-codec:commons-codec:jar:1.19.0:compile -- module org.apache.commons.codec
+[INFO]    com.google.oauth-client:google-oauth-client:jar:1.35.0:compile -- module com.google.api.client.auth [auto]
+[INFO]    com.google.auth:google-auth-library-credentials:jar:1.23.0:compile -- module com.google.auth [auto]
+[INFO]    com.google.http-client:google-http-client-gson:jar:1.44.1:compile -- module com.google.api.client.json.gson [auto]
+[INFO]    com.google.http-client:google-http-client-apache-v2:jar:1.44.1:compile -- module com.google.api.client.http.apache.v2 [auto]
+[INFO]    org.apache.httpcomponents:httpcore:jar:4.4.16:compile -- module org.apache.httpcomponents.httpcore [auto]
+[INFO]    org.apache.httpcomponents:httpclient:jar:4.5.14:compile -- module org.apache.httpcomponents.httpclient [auto]
+[INFO]    com.google.api-client:google-api-client-gson:jar:2.4.0:compile -- module google.api.client.gson [auto]
+[INFO]    com.google.http-client:google-http-client:jar:1.44.1:compile -- module com.google.api.client [auto]
+[INFO]    com.google.code.findbugs:jsr305:jar:3.0.2:compile -- module jsr305 (auto)
+[INFO]    com.google.errorprone:error_prone_annotations:jar:2.23.0:compile -- module com.google.errorprone.annotations [auto]
+[INFO]    com.google.j2objc:j2objc-annotations:jar:2.8:compile -- module j2objc.annotations (auto)
+[INFO]    io.grpc:grpc-context:jar:1.60.1:compile -- module grpc.context (auto)
+[INFO]    io.opencensus:opencensus-api:jar:0.31.1:compile -- module opencensus.api (auto)
+[INFO]    io.opencensus:opencensus-contrib-http-util:jar:0.31.1:compile -- module opencensus.contrib.http.util (auto)
+[INFO]    com.google.api:api-common:jar:2.31.0:compile -- module com.google.api.apicommon [auto]
+[INFO]    com.google.auto.value:auto-value-annotations:jar:1.10.4:compile -- module auto.value.annotations (auto)
+[INFO]    javax.annotation:javax.annotation-api:jar:1.3.2:compile -- module java.annotation [auto]
+[INFO]    com.google.auth:google-auth-library-oauth2-http:jar:1.23.0:compile -- module com.google.auth.oauth2 [auto]
+[INFO]    com.google.cloud:google-cloud-storage:jar:2.38.0:compile -- module google.cloud.storage (auto)
+[INFO]    com.google.guava:failureaccess:jar:1.0.2:compile -- module com.google.common.util.concurrent.internal [auto]
+[INFO]    com.google.guava:listenablefuture:jar:9999.0-empty-to-avoid-conflict-with-guava:compile -- module listenablefuture (auto)
+[INFO]    com.google.http-client:google-http-client-jackson2:jar:1.44.1:compile -- module com.google.api.client.json.jackson2 [auto]
+[INFO]    com.google.apis:google-api-services-storage:jar:v1-rev20240319-2.0.0:compile -- module com.google.api.services.storage [auto]
+[INFO]    com.google.code.gson:gson:jar:2.13.2:compile -- module com.google.gson
+[INFO]    com.google.cloud:google-cloud-core:jar:2.38.0:compile -- module google.cloud.core (auto)
+[INFO]    com.google.cloud:google-cloud-core-http:jar:2.38.0:compile -- module google.cloud.core.http (auto)
+[INFO]    com.google.http-client:google-http-client-appengine:jar:1.44.1:compile -- module com.google.api.client.extensions.appengine [auto]
+[INFO]    com.google.api:gax-httpjson:jar:2.48.0:compile -- module gax.httpjson (auto)
+[INFO]    com.google.cloud:google-cloud-core-grpc:jar:2.38.0:compile -- module google.cloud.core.grpc (auto)
+[INFO]    com.google.api:gax:jar:2.48.0:compile -- module gax (auto)
+[INFO]    com.google.api:gax-grpc:jar:2.48.0:compile -- module gax.grpc (auto)
+[INFO]    io.grpc:grpc-inprocess:jar:1.62.2:compile -- module io.grpc.inprocess [auto]
+[INFO]    io.grpc:grpc-alts:jar:1.62.2:compile -- module io.grpc.alts [auto]
+[INFO]    io.grpc:grpc-grpclb:jar:1.62.2:compile -- module io.grpc.grpclb [auto]
+[INFO]    org.conscrypt:conscrypt-openjdk-uber:jar:2.5.2:compile -- module org.conscrypt [auto]
+[INFO]    io.grpc:grpc-auth:jar:1.62.2:compile -- module io.grpc.auth [auto]
+[INFO]    com.google.api.grpc:proto-google-iam-v1:jar:1.34.0:compile -- module proto.google.iam.v1 (auto)
+[INFO]    com.google.protobuf:protobuf-java:jar:4.28.2:compile -- module com.google.protobuf [auto]
+[INFO]    com.google.protobuf:protobuf-java-util:jar:3.25.3:compile -- module protobuf.java.util (auto)
+[INFO]    io.grpc:grpc-core:jar:1.62.2:compile -- module io.grpc.internal [auto]
+[INFO]    com.google.android:annotations:jar:4.1.1.4:runtime -- module annotations (auto)
+[INFO]    org.codehaus.mojo:animal-sniffer-annotations:jar:1.23:runtime -- module animal.sniffer.annotations (auto)
+[INFO]    io.perfmark:perfmark-api:jar:0.27.0:runtime -- module io.perfmark [auto]
+[INFO]    io.grpc:grpc-protobuf:jar:1.62.2:compile -- module io.grpc.protobuf [auto]
+[INFO]    io.grpc:grpc-protobuf-lite:jar:1.62.2:runtime -- module io.grpc.protobuf.lite [auto]
+[INFO]    com.google.api.grpc:proto-google-common-protos:jar:2.39.0:compile -- module proto.google.common.protos (auto)
+[INFO]    org.threeten:threetenbp:jar:1.6.9:compile -- module org.threeten.bp [auto]
+[INFO]    com.google.api.grpc:proto-google-cloud-storage-v2:jar:2.38.0-alpha:compile -- module proto.google.cloud.storage.v2 (auto)
+[INFO]    com.google.api.grpc:grpc-google-cloud-storage-v2:jar:2.38.0-alpha:compile -- module grpc.google.cloud.storage.v2 (auto)
+[INFO]    com.google.api.grpc:gapic-google-cloud-storage-v2:jar:2.38.0-alpha:compile -- module gapic.google.cloud.storage.v2 (auto)
+[INFO]    io.grpc:grpc-api:jar:1.62.2:compile -- module io.grpc [auto]
+[INFO]    io.grpc:grpc-netty-shaded:jar:1.62.2:compile -- module io.grpc.netty.shaded [auto]
+[INFO]    io.grpc:grpc-util:jar:1.62.2:runtime -- module io.grpc.util [auto]
+[INFO]    io.grpc:grpc-stub:jar:1.62.2:compile -- module io.grpc.stub [auto]
+[INFO]    io.grpc:grpc-googleapis:jar:1.62.2:runtime -- module io.grpc.googleapis [auto]
+[INFO]    org.checkerframework:checker-qual:jar:3.42.0:compile -- module org.checkerframework.checker.qual [auto]
+[INFO]    io.grpc:grpc-xds:jar:1.62.2:runtime -- module io.grpc.xds [auto]
+[INFO]    io.opencensus:opencensus-proto:jar:0.2.0:runtime -- module opencensus.proto (auto)
+[INFO]    io.grpc:grpc-services:jar:1.62.2:runtime -- module io.grpc.services [auto]
+[INFO]    com.google.re2j:re2j:jar:1.7:runtime -- module re2j (auto)
+[INFO]    io.grpc:grpc-rls:jar:1.62.2:runtime -- module io.grpc.rls [auto]
+[INFO]    com.google.cloud:google-cloud-firestore:jar:3.21.1:compile -- module google.cloud.firestore (auto)
+[INFO]    com.google.api.grpc:proto-google-cloud-firestore-v1:jar:3.21.1:compile -- module proto.google.cloud.firestore.v1 (auto)
+[INFO]    com.google.cloud:proto-google-cloud-firestore-bundle-v1:jar:3.21.1:compile -- module proto.google.cloud.firestore.bundle.v1 (auto)
+[INFO]    io.opencensus:opencensus-contrib-grpc-util:jar:0.31.1:compile -- module opencensus.contrib.grpc.util (auto)
+[INFO]    com.google.guava:guava:jar:33.1.0-jre:compile -- module com.google.common [auto]
+[INFO]    org.slf4j:slf4j-api:jar:2.0.17:compile -- module org.slf4j
+[INFO]    io.netty:netty-codec-http:jar:4.2.10.Final:compile -- module io.netty.codec.http
+[INFO]    io.netty:netty-common:jar:4.2.10.Final:compile -- module io.netty.common
+[INFO]    io.netty:netty-buffer:jar:4.2.10.Final:compile -- module io.netty.buffer
+[INFO]    io.netty:netty-codec-base:jar:4.2.10.Final:compile -- module io.netty.codec
+[INFO]    io.netty:netty-codec-compression:jar:4.2.10.Final:compile -- module io.netty.codec.compression
+[INFO]    io.netty:netty-handler:jar:4.2.10.Final:compile -- module io.netty.handler
+[INFO]    io.netty:netty-resolver:jar:4.2.10.Final:compile -- module io.netty.resolver
+[INFO]    io.netty:netty-transport-native-unix-common:jar:4.2.10.Final:compile -- module io.netty.transport.unix.common
+[INFO]    io.netty:netty-transport:jar:4.2.10.Final:compile -- module io.netty.transport
+[INFO]    io.netty:netty-tcnative-boringssl-static:jar:2.0.75.Final:compile -- module io.netty.internal.tcnative
+[INFO]    io.netty:netty-tcnative-classes:jar:2.0.75.Final:compile -- module io.netty.tcnative.classes.openssl
+[INFO]    io.netty:netty-tcnative-boringssl-static:jar:linux-x86_64:2.0.75.Final:runtime -- module io.netty.internal.tcnative.openssl.linux.x86_64
+[INFO]    io.netty:netty-tcnative-boringssl-static:jar:linux-aarch_64:2.0.75.Final:runtime -- module io.netty.internal.tcnative.openssl.linux.aarch_64
+[INFO]    io.netty:netty-tcnative-boringssl-static:jar:osx-x86_64:2.0.75.Final:runtime -- module io.netty.internal.tcnative.openssl.osx.x86_64
+[INFO]    io.netty:netty-tcnative-boringssl-static:jar:osx-aarch_64:2.0.75.Final:runtime -- module io.netty.internal.tcnative.openssl.osx.aarch_64
+[INFO]    io.netty:netty-tcnative-boringssl-static:jar:windows-x86_64:2.0.75.Final:runtime -- module io.netty.internal.tcnative.openssl.windows.x86_64
+[INFO]    com.fasterxml.jackson.core:jackson-databind:jar:2.21.1:compile -- module com.fasterxml.jackson.databind
+[INFO]    com.fasterxml.jackson.core:jackson-annotations:jar:2.21:compile -- module com.fasterxml.jackson.annotation
+[INFO]    com.fasterxml.jackson.core:jackson-core:jar:2.21.1:compile -- module com.fasterxml.jackson.core
+[INFO]    org.springframework.boot:spring-boot-devtools:jar:4.0.4:runtime (optional) -- module spring.boot.devtools [auto]
+[INFO]    org.springframework.boot:spring-boot:jar:4.0.4:compile -- module spring.boot [auto]
+[INFO]    org.springframework.boot:spring-boot-autoconfigure:jar:4.0.4:compile -- module spring.boot.autoconfigure [auto]
+[INFO]    org.springframework.boot:spring-boot-starter-actuator-test:jar:4.0.4:test -- module spring.boot.starter.actuator.test [auto]
+[INFO]    org.springframework.boot:spring-boot-starter-micrometer-metrics-test:jar:4.0.4:test -- module spring.boot.starter.micrometer.metrics.test [auto]
+[INFO]    org.springframework.boot:spring-boot-micrometer-metrics-test:jar:4.0.4:test -- module spring.boot.micrometer.metrics.test [auto]
+[INFO]    io.micrometer:micrometer-observation-test:jar:1.16.4:test -- module micrometer.observation.test [auto]
+[INFO]    org.springframework.boot:spring-boot-starter-test:jar:4.0.4:test -- module spring.boot.starter.test [auto]
+[INFO]    org.springframework.boot:spring-boot-test:jar:4.0.4:test -- module spring.boot.test [auto]
+[INFO]    org.springframework.boot:spring-boot-test-autoconfigure:jar:4.0.4:test -- module spring.boot.test.autoconfigure [auto]
+[INFO]    com.jayway.jsonpath:json-path:jar:2.10.0:test -- module json.path [auto]
+[INFO]    jakarta.xml.bind:jakarta.xml.bind-api:jar:4.0.4:test -- module jakarta.xml.bind
+[INFO]    jakarta.activation:jakarta.activation-api:jar:2.1.4:test -- module jakarta.activation
+[INFO]    net.minidev:json-smart:jar:2.6.0:test -- module json.smart (auto)
+[INFO]    net.minidev:accessors-smart:jar:2.6.0:test -- module accessors.smart (auto)
+[INFO]    org.ow2.asm:asm:jar:9.7.1:test -- module org.objectweb.asm
+[INFO]    org.assertj:assertj-core:jar:3.27.7:test -- module org.assertj.core
+[INFO]    net.bytebuddy:byte-buddy:jar:1.17.8:test -- module net.bytebuddy
+[INFO]    org.awaitility:awaitility:jar:4.3.0:test -- module awaitility (auto)
+[INFO]    org.hamcrest:hamcrest:jar:3.0:test -- module org.hamcrest [auto]
+[INFO]    org.junit.jupiter:junit-jupiter:jar:6.0.3:test -- module org.junit.jupiter
+[INFO]    org.junit.jupiter:junit-jupiter-api:jar:6.0.3:test -- module org.junit.jupiter.api
+[INFO]    org.opentest4j:opentest4j:jar:1.3.0:test -- module org.opentest4j
+[INFO]    org.junit.platform:junit-platform-commons:jar:6.0.3:test -- module org.junit.platform.commons
+[INFO]    org.apiguardian:apiguardian-api:jar:1.1.2:test -- module org.apiguardian.api
+[INFO]    org.junit.jupiter:junit-jupiter-params:jar:6.0.3:test -- module org.junit.jupiter.params
+[INFO]    org.junit.jupiter:junit-jupiter-engine:jar:6.0.3:test -- module org.junit.jupiter.engine
+[INFO]    org.junit.platform:junit-platform-engine:jar:6.0.3:test -- module org.junit.platform.engine
+[INFO]    org.mockito:mockito-core:jar:5.20.0:test -- module org.mockito
+[INFO]    net.bytebuddy:byte-buddy-agent:jar:1.17.8:test -- module net.bytebuddy.agent
+[INFO]    org.objenesis:objenesis:jar:3.3:test -- module org.objenesis [auto]
+[INFO]    org.mockito:mockito-junit-jupiter:jar:5.20.0:test -- module org.mockito.junit.jupiter
+[INFO]    org.skyscreamer:jsonassert:jar:1.5.3:test -- module jsonassert (auto)
+[INFO]    com.vaadin.external.google:android-json:jar:0.0.20131108.vaadin1:test -- module android.json (auto)
+[INFO]    org.springframework:spring-core:jar:7.0.6:compile -- module spring.core [auto]
+[INFO]    commons-logging:commons-logging:jar:1.3.6:compile -- module org.apache.commons.logging
+[INFO]    org.springframework:spring-test:jar:7.0.6:test -- module spring.test [auto]
+[INFO]    org.xmlunit:xmlunit-core:jar:2.10.4:test -- module org.xmlunit [auto]
+[INFO]    org.springframework.boot:spring-boot-starter-webmvc-test:jar:4.0.4:test -- module spring.boot.starter.webmvc.test [auto]
+[INFO]    org.springframework.boot:spring-boot-starter-jackson-test:jar:4.0.4:test -- module spring.boot.starter.jackson.test [auto]
+[INFO]    org.springframework.boot:spring-boot-webmvc-test:jar:4.0.4:test -- module spring.boot.webmvc.test [auto]
+[INFO]    org.springframework.boot:spring-boot-web-server:jar:4.0.4:compile -- module spring.boot.web.server [auto]
+[INFO]    org.springframework.boot:spring-boot-resttestclient:jar:4.0.4:test -- module spring.boot.resttestclient [auto]
+[INFO]    org.springframework.security:spring-security-test:jar:7.0.4:test -- module spring.security.test [auto]
+[INFO]    org.springframework.security:spring-security-core:jar:7.0.4:compile -- module spring.security.core [auto]
+[INFO]    org.springframework.security:spring-security-crypto:jar:7.0.4:compile -- module spring.security.crypto [auto]
+[INFO]    org.springframework:spring-expression:jar:7.0.6:compile -- module spring.expression [auto]
+[INFO]    org.springframework.security:spring-security-web:jar:7.0.4:compile -- module spring.security.web [auto]
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  3.301 s
+[INFO] Finished at: 2026-04-19T12:06:49+05:30
+[INFO] ------------------------------------------------------------------------

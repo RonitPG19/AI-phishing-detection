@@ -1,0 +1,95 @@
+import { PublicNavbar } from "@/components/PublicNavbar"
+import { HeroSection } from "@/components/landing/HeroSection"
+import { WorkflowCards } from "@/components/landing/WorkflowCards"
+import { FeatureShowcase } from "@/components/landing/FeatureShowcase"
+import { PlatformShowcase } from "@/components/landing/PlatformShowcase"
+
+const footerColumns = [
+  {
+    title: "Core Product",
+    links: ["Browser extension", "Review dashboard", "Scan history"],
+  },
+  {
+    title: "Coverage",
+    links: ["Gmail", "Outlook", "Sender and link checks"],
+  },
+  {
+    title: "What You Get",
+    links: ["Fast verdicts", "Clear findings", "Analyst-friendly reports"],
+  },
+]
+
+export function LandingPage({ theme, onNavigate, onThemeToggle }) {
+  const isDark = theme === "dark"
+
+  return (
+    <main className={`min-h-screen text-foreground selection:bg-primary/30 ${isDark
+      ? "bg-background"
+      : "bg-white"
+      }`}>
+      <div className="pointer-events-none fixed inset-0 z-0">
+        <div className={`absolute inset-0 ${isDark ? "bg-[url('https://res.cloudinary.com/djpkwtowz/image/upload/v1715478440/noise_uvw6h0.png')] opacity-20 mix-blend-overlay" : "bg-[url('https://res.cloudinary.com/djpkwtowz/image/upload/v1715478440/noise_uvw6h0.png')] opacity-[0.03] mix-blend-multiply"}`} />
+        <div className={`absolute inset-x-0 top-0 h-[500px] ${isDark
+          ? "bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(120,119,198,0.15),rgba(255,255,255,0))]"
+          : ""
+          }`} />
+      </div>
+
+      <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <header className="fixed top-4 inset-x-0 z-50 px-4 flex justify-center">
+          <div className="relative w-full max-w-5xl flex items-center justify-center">
+            <PublicNavbar onNavigate={onNavigate} theme={theme} onThemeToggle={onThemeToggle} />
+          </div>
+        </header>
+
+        <div className="pb-32">
+          <HeroSection onNavigate={onNavigate} theme={theme} />
+
+          <div className="mt-20 md:mt-32">
+            <FeatureShowcase theme={theme} />
+          </div>
+
+          <div className="mt-12 md:mt-16">
+            <PlatformShowcase theme={theme} />
+          </div>
+
+          <div className="mt-20 md:mt-32">
+            <WorkflowCards theme={theme} />
+          </div>
+        </div>
+
+        <footer className="mt-12 border-t border-border/40 pb-16 pt-12">
+          <div className="grid gap-10 md:grid-cols-[1.6fr_repeat(3,minmax(0,1fr))]">
+            <div className="max-w-md">
+              <div className="text-2xl font-semibold tracking-tight text-foreground flex items-center gap-2">
+                <img src="/tribunal-logo.png" alt="Tribunal Logo" className="h-8 w-8 object-contain" />
+                Tribunal
+              </div>
+              <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+                Tribunal is a AI-assisted phishing detection tool designed for real-time email analysis and high-fidelity reporting across Gmail and Outlook.
+              </p>
+              <p className="mt-5 text-sm font-medium text-foreground/80">
+                Security for your personal inbox.
+              </p>
+            </div>
+
+            {footerColumns.map((column) => (
+              <div key={column.title}>
+                <h3 className="text-sm font-semibold text-foreground tracking-wide">{column.title}</h3>
+                <ul className="mt-5 space-y-3.5">
+                  {column.links.map((link) => (
+                    <li key={link} className="text-sm text-muted-foreground">
+                      {link}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+
+        </footer>
+      </div>
+    </main>
+  )
+}
+

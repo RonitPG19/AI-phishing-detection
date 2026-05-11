@@ -1,0 +1,1366 @@
+package com.phishing.scanner_app.service;
+
+import com.phishing.scanner_app.dto.EmailRequest;
+import com.phishing.scanner_app.dto.LinkScanReport;
+import com.phishing.scanner_app.model.CategorizedFindings;
+import com.phishing.scanner_app.model.EmailContent;
+import com.phishing.scanner_app.model.EmailScanReport;
+import com.phishing.scanner_app.model.HeaderInspectionResult;
+import com.phishing.scanner_app.model.RiskFinding;
+import com.phishing.scanner_app.model.RiskScoreResult;
+import com.phishing.scanner_app.model.Severity;
+import com.phishing.scanner_app.util.RedirectChainResolver;
+import com.phishing.scanner_app.util.WhitelistManager;
+
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLHandshakeException;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.net.HttpURLConnection;
+import java.net.IDN;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.net.URI;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.security.cert.Certificate;
+import java.security.cert.X509Certificate;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
+import java.time.temporal.ChronoUnit;
+import java.util.AbstractMap;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+
+@Service
+public class PhishingScannerService {
+
+    private static final Logger logger = LoggerFactory.getLogger(PhishingScannerService.class);
+
+    private static final int NETWORK_TIMEOUT_MS = 5000;
+    private static final int WHOIS_READ_TIMEOUT_MS = 5000;
+    private static final int REDIRECT_MAX_THREADS = 8;
+    private static final int WHOIS_MAX_THREADS = 6;
+    private static final int DOMAIN_AGE_SUSPICIOUS_THRESHOLD_DAYS = 60;
+    private static final int CERTIFICATE_NEW_THRESHOLD_DAYS = 15;
+    private static final int LETS_ENCRYPT_DOMAIN_AGE_THRESHOLD_DAYS = 30;
+    private static final int TRUSTED_DOMAIN_LIMIT_PER_FILE = 10_000;
+    private static final Pattern PLAIN_TEXT_URL_PATTERN = Pattern.compile("(https?://[^\\s\"'<>()]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern SAFE_BROWSING_MATCH_PATTERN = Pattern.compile("\\\"threatType\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"(?s).*?\\\"threat\\\"\\s*:\\s*\\{(?s).*?\\\"url\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
+    private static final Pattern WHOIS_CREATION_PATTERN = Pattern.compile("(?im)^(?:created|creation date|created on|registration time|registered on|domain create date)\\s*:\\s*(.+)$");
+    private static final Pattern WHOIS_REFERRAL_PATTERN = Pattern.compile("(?im)^(?:refer|whois)\\s*:\\s*(.+)$");
+    private static final Set<String> COMMON_SECOND_LEVEL_TLDS = Set.of("ac", "co", "com", "edu", "gov", "net", "org");
+    private static final Map<String, Set<String>> BRAND_DOMAIN_MAP = buildBrandDomainMap();
+    private static final List<DateTimeFormatter> OFFSET_DATE_TIME_FORMATTERS = buildOffsetDateTimeFormatters();
+    private static final List<DateTimeFormatter> LOCAL_DATE_TIME_FORMATTERS = buildLocalDateTimeFormatters();
+    private static final List<DateTimeFormatter> LOCAL_DATE_FORMATTERS = buildLocalDateFormatters();
+    private static final Map<String, Integer> DOMAIN_AGE_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private final Set<String> trustedDomains;
+    private final RedirectChainResolver redirectChainResolver;
+    private final GeminiEmailAnalyzer geminiEmailAnalyzer;
+    private final ThreatIntelService threatIntelService;
+    private final WhitelistManager whitelistManager;
+
+    public PhishingScannerService(
+        RedirectChainResolver redirectChainResolver,
+        GeminiEmailAnalyzer geminiEmailAnalyzer,
+        ThreatIntelService threatIntelService,
+        WhitelistManager whitelistManager
+    ) {
+        this.redirectChainResolver = redirectChainResolver;
+        this.geminiEmailAnalyzer = geminiEmailAnalyzer;
+        this.threatIntelService = threatIntelService;
+        this.whitelistManager = whitelistManager;
+        this.trustedDomains = loadTrustedDomains();
+    }
+
+    public EmailScanReport scanEmail(EmailRequest request, String safeBrowsingApiKey) {
+        String traceId = "email-" + Long.toHexString(System.nanoTime());
+        long scanStartNs = System.nanoTime();
+        String subject = defaultString(request.getSubject(), "(no subject)");
+        String sender = defaultString(request.getFrom(), "(unknown)");
+        boolean hasBody = request.hasBodyContent();
+
+        // ── Collect URLs from body content ──
+        EmailContent emailContent = new EmailContent();
+        if (request.getBodyHtml() != null) {
+            emailContent.appendHtml(request.getBodyHtml());
+        }
+        if (request.getBodyText() != null) {
+            emailContent.appendText(request.getBodyText());
+        }
+        Set<String> urls = extractUrlsFromContent(emailContent);
+
+        // ── Merge URLs from the explicit "links" field ──
+        if (request.hasLinks()) {
+            for (EmailRequest.LinkItem link : request.getLinks()) {
+                String href = link.getHref();
+                if (href != null && (href.startsWith("http://") || href.startsWith("https://"))) {
+                    urls.add(href);
+                }
+            }
+        }
+
+        List<RiskFinding> findings = new ArrayList<>();
+
+        // ── Redirect chain resolution ──
+        long redirectStartNs = System.nanoTime();
+        int findingsBeforeRedirect = findings.size();
+        Set<String> resolvedUrls = new LinkedHashSet<>(urls);
+        Map<String, RedirectChainResolver.RedirectChain> redirectResults = resolveRedirectsBounded(urls);
+        for (String url : urls) {
+            RedirectChainResolver.RedirectChain chain = redirectResults.get(url);
+            if (chain == null) {
+                continue;
+            }
+            if (chain.wasRedirected()) {
+                resolvedUrls.add(chain.finalUrl());
+
+                String startDomain = extractDomainFromUrl(url);
+                String finalDomain = extractDomainFromUrl(chain.finalUrl());
+
+                if (chain.hopCount() >= 3) {
+                    findings.add(new RiskFinding(url,
+                        "URL has a long redirect chain (" + chain.hopCount() + " hops) ending at " + chain.finalUrl(),
+                        Severity.MEDIUM));
+                }
+
+                if (!startDomain.isEmpty() && !finalDomain.isEmpty()
+                    && !extractRootDomain(startDomain).equals(extractRootDomain(finalDomain))) {
+                    findings.add(new RiskFinding(url,
+                        "URL redirects to a different domain: " + startDomain + " → " + finalDomain,
+                        Severity.LOW));
+                }
+
+                if (RedirectChainResolver.isKnownShortener(startDomain)) {
+                    findings.add(new RiskFinding(url,
+                        "URL uses shortener (" + startDomain + "), real destination: " + chain.finalUrl(),
+                        Severity.LOW));
+                }
+            }
+        }
+        long redirectMs = elapsedMillis(redirectStartNs);
+        logger.info("scan={} stage=redirect durationMs={} inputUrls={} resolvedUrls={} findingsAdded={}",
+            traceId, redirectMs, urls.size(), resolvedUrls.size(), findings.size() - findingsBeforeRedirect);
+
+        Set<String> allUrls = resolvedUrls;
+
+        // ── Header inspection (only when body content is present) ──
+        HeaderInspectionResult headerInspectionResult = new HeaderInspectionResult();
+        if (hasBody) {
+            headerInspectionResult = inspectAuthenticationHeaders(request, findings);
+            headerInspectionResult.displayNameMismatch = detectDisplayNameMismatch(request, findings);
+            headerInspectionResult.replyToMismatch = detectReplyToMismatch(request, findings);
+        }
+
+        // ── Link threat checks (always performed) ──
+        checkThreatIntelBlacklist(allUrls, findings);
+
+        long safeBrowsingStartNs = System.nanoTime();
+        int findingsBeforeSafeBrowsing = findings.size();
+        checkGoogleSafeBrowsing(allUrls, safeBrowsingApiKey, findings);
+        long safeBrowsingMs = elapsedMillis(safeBrowsingStartNs);
+        logger.info("scan={} stage=safeBrowsing durationMs={} urlCount={} findingsAdded={}",
+            traceId, safeBrowsingMs, allUrls.size(), findings.size() - findingsBeforeSafeBrowsing);
+
+        Map<String, String> urlDomainMap = buildUrlDomainMap(allUrls);
+        inspectHomographDomains(urlDomainMap, trustedDomains, findings);
+
+        long whoisStartNs = System.nanoTime();
+        int findingsBeforeWhois = findings.size();
+        Map<String, Integer> domainAgeByRootDomain = inspectDomainAges(urlDomainMap.values(), findings);
+        long whoisMs = elapsedMillis(whoisStartNs);
+        logger.info("scan={} stage=whois durationMs={} uniqueDomains={} findingsAdded={}",
+            traceId, whoisMs, countUniqueRootDomains(urlDomainMap.values()), findings.size() - findingsBeforeWhois);
+
+        inspectTyposquatting(urlDomainMap.values(), trustedDomains, findings);
+
+        long sslStartNs = System.nanoTime();
+        int findingsBeforeSsl = findings.size();
+        inspectSslCertificates(allUrls, domainAgeByRootDomain, findings);
+        long sslMs = elapsedMillis(sslStartNs);
+        logger.info("scan={} stage=ssl durationMs={} urlCount={} findingsAdded={}",
+            traceId, sslMs, allUrls.size(), findings.size() - findingsBeforeSsl);
+
+        // ── AI-powered email body analysis (only when body content is present) ──
+        GeminiEmailAnalyzer.GeminiAnalysisResult aiAnalysis = null;
+        long geminiMs = -1;
+        if (hasBody) {
+            String bodyForAnalysis = emailContent.hasHtml()
+                ? org.jsoup.Jsoup.parse(emailContent.getHtml()).text()
+                : emailContent.getText();
+
+            long geminiStartNs = System.nanoTime();
+            aiAnalysis = geminiEmailAnalyzer.analyze(subject, sender, bodyForAnalysis);
+            geminiMs = elapsedMillis(geminiStartNs);
+            logger.info("scan={} stage=gemini durationMs={} bodyPresent={}", traceId, geminiMs, true);
+
+            if (aiAnalysis != null && aiAnalysis.indicators != null) {
+                for (GeminiEmailAnalyzer.PhishingIndicator indicator : aiAnalysis.indicators) {
+                    Severity severity = parseAiSeverity(indicator.severity);
+                    findings.add(new RiskFinding(
+                        "[AI] " + indicator.indicator,
+                        indicator.description,
+                        severity
+                    ));
+                }
+            }
+        } else {
+            logger.info("scan={} stage=gemini durationMs={} bodyPresent={}", traceId, 0, false);
+        }
+
+        // ── Risk scoring ──
+        RiskScoreResult riskScoreResult;
+        if (hasBody) {
+            String senderRootDomain = extractRootDomain(extractFromDomain(sender));
+            boolean senderWhitelisted = whitelistManager.isWhitelistedDomain(senderRootDomain);
+            riskScoreResult = calculateRiskScore(findings, headerInspectionResult, senderWhitelisted);
+        } else {
+            // Link-only mode: use simplified scoring without header/auth/AI components
+            riskScoreResult = calculateLinkOnlyRiskScore(findings);
+        }
+
+        CategorizedFindings categorized = categorizeResults(findings, riskScoreResult.scoreBreakdown());
+
+        long totalMs = elapsedMillis(scanStartNs);
+        logger.info("scan={} stage=total durationMs={} urls={} findings={} whoisMs={} sslMs={} redirectMs={} safeBrowsingMs={} geminiMs={}",
+            traceId, totalMs, allUrls.size(), findings.size(), whoisMs, sslMs, redirectMs, safeBrowsingMs, geminiMs);
+
+        return new EmailScanReport(subject, sender, allUrls.size(), categorized, headerInspectionResult, riskScoreResult.overallScore(), null, aiAnalysis);
+    }
+
+    /**
+     * Scan a list of URLs for phishing indicators.
+     * This is a link-only scan — no email headers, body, or AI analysis.
+     */
+    public LinkScanReport scanLinks(List<String> urls, String safeBrowsingApiKey) {
+        String traceId = "links-" + Long.toHexString(System.nanoTime());
+        long scanStartNs = System.nanoTime();
+        List<RiskFinding> findings = new ArrayList<>();
+
+        Set<String> urlSet = new LinkedHashSet<>(urls);
+
+        // ── Redirect chain resolution ──
+        long redirectStartNs = System.nanoTime();
+        int findingsBeforeRedirect = findings.size();
+        Set<String> resolvedUrls = new LinkedHashSet<>(urlSet);
+        Map<String, RedirectChainResolver.RedirectChain> redirectResults = resolveRedirectsBounded(urlSet);
+        for (String url : urlSet) {
+            RedirectChainResolver.RedirectChain chain = redirectResults.get(url);
+            if (chain == null) {
+                continue;
+            }
+            if (chain.wasRedirected()) {
+                resolvedUrls.add(chain.finalUrl());
+
+                String startDomain = extractDomainFromUrl(url);
+                String finalDomain = extractDomainFromUrl(chain.finalUrl());
+
+                if (chain.hopCount() >= 3) {
+                    findings.add(new RiskFinding(url,
+                        "URL has a long redirect chain (" + chain.hopCount() + " hops) ending at " + chain.finalUrl(),
+                        Severity.MEDIUM));
+                }
+
+                if (!startDomain.isEmpty() && !finalDomain.isEmpty()
+                    && !extractRootDomain(startDomain).equals(extractRootDomain(finalDomain))) {
+                    findings.add(new RiskFinding(url,
+                        "URL redirects to a different domain: " + startDomain + " → " + finalDomain,
+                        Severity.LOW));
+                }
+
+                if (RedirectChainResolver.isKnownShortener(startDomain)) {
+                    findings.add(new RiskFinding(url,
+                        "URL uses shortener (" + startDomain + "), real destination: " + chain.finalUrl(),
+                        Severity.LOW));
+                }
+            }
+        }
+        long redirectMs = elapsedMillis(redirectStartNs);
+        logger.info("scan={} stage=redirect durationMs={} inputUrls={} resolvedUrls={} findingsAdded={}",
+            traceId, redirectMs, urlSet.size(), resolvedUrls.size(), findings.size() - findingsBeforeRedirect);
+
+        Set<String> allUrls = resolvedUrls;
+
+        // ── Threat intelligence checks ──
+        checkThreatIntelBlacklist(allUrls, findings);
+
+        long safeBrowsingStartNs = System.nanoTime();
+        int findingsBeforeSafeBrowsing = findings.size();
+        checkGoogleSafeBrowsing(allUrls, safeBrowsingApiKey, findings);
+        long safeBrowsingMs = elapsedMillis(safeBrowsingStartNs);
+        logger.info("scan={} stage=safeBrowsing durationMs={} urlCount={} findingsAdded={}",
+            traceId, safeBrowsingMs, allUrls.size(), findings.size() - findingsBeforeSafeBrowsing);
+
+        // ── Domain inspections ──
+        Map<String, String> urlDomainMap = buildUrlDomainMap(allUrls);
+        inspectHomographDomains(urlDomainMap, trustedDomains, findings);
+
+        long whoisStartNs = System.nanoTime();
+        int findingsBeforeWhois = findings.size();
+        Map<String, Integer> domainAgeByRootDomain = inspectDomainAges(urlDomainMap.values(), findings);
+        long whoisMs = elapsedMillis(whoisStartNs);
+        logger.info("scan={} stage=whois durationMs={} uniqueDomains={} findingsAdded={}",
+            traceId, whoisMs, countUniqueRootDomains(urlDomainMap.values()), findings.size() - findingsBeforeWhois);
+
+        inspectTyposquatting(urlDomainMap.values(), trustedDomains, findings);
+
+        long sslStartNs = System.nanoTime();
+        int findingsBeforeSsl = findings.size();
+        inspectSslCertificates(allUrls, domainAgeByRootDomain, findings);
+        long sslMs = elapsedMillis(sslStartNs);
+        logger.info("scan={} stage=ssl durationMs={} urlCount={} findingsAdded={}",
+            traceId, sslMs, allUrls.size(), findings.size() - findingsBeforeSsl);
+
+        // ── Calculate risk score (link-only — no header/auth/AI components) ──
+        RiskScoreResult riskScoreResult = calculateLinkOnlyRiskScore(findings);
+
+        int score = riskScoreResult.overallScore();
+        String verdict = LinkScanReport.verdictFromScore(score);
+
+        long totalMs = elapsedMillis(scanStartNs);
+        logger.info("scan={} stage=total durationMs={} urls={} findings={} whoisMs={} sslMs={} redirectMs={} safeBrowsingMs={}",
+            traceId, totalMs, allUrls.size(), findings.size(), whoisMs, sslMs, redirectMs, safeBrowsingMs);
+
+        return new LinkScanReport(
+            allUrls.size(),
+            new ArrayList<>(allUrls),
+            score,
+            verdict,
+            findings,
+            riskScoreResult.scoreBreakdown(),
+            null
+        );
+    }
+
+    /**
+     * Simplified risk scoring for link-only scans.
+     * Only considers link-relevant categories: blacklist, threat intel, domain, SSL, URL behavior.
+     */
+    private static RiskScoreResult calculateLinkOnlyRiskScore(List<RiskFinding> findings) {
+        int blacklistScore = 0;
+        int threatScore = 0;
+        int domainScore = 0;
+        int sslScore = 0;
+        int urlScore = 0;
+
+        boolean hasBlacklist = false;
+        boolean hasThreatIntel = false;
+
+        for (RiskFinding f : findings) {
+            String desc = f.description().toLowerCase();
+            int score = f.scoreContribution();
+
+            if (desc.contains("blacklisted") || desc.contains("blacklist")) {
+                blacklistScore += score;
+                hasBlacklist = true;
+            } else if (desc.contains("safe browsing")) {
+                threatScore += score;
+                hasThreatIntel = true;
+            } else if (desc.contains("domain is only") || desc.contains("typosquatting") || desc.contains("homograph") || desc.contains("impersonate")) {
+                domainScore += score;
+            } else if (desc.contains("ssl") || desc.contains("certificate") || desc.contains("does not resolve")) {
+                sslScore += score;
+            } else if (desc.contains("redirect") || desc.contains("shortener")) {
+                urlScore += score;
+            } else {
+                // Default: categorize as domain/url
+                domainScore += score;
+            }
+        }
+
+        // Apply caps
+        threatScore = Math.min(threatScore, 30);
+        domainScore = Math.min(domainScore, 25);
+        sslScore = Math.min(sslScore, 15);
+        urlScore = Math.min(urlScore, 10);
+
+        int total = blacklistScore + threatScore + domainScore + sslScore + urlScore;
+
+        Map<String, Integer> breakdown = new LinkedHashMap<>();
+        if (blacklistScore > 0) breakdown.put("blacklist", blacklistScore);
+        if (threatScore > 0)    breakdown.put("threatIntel", threatScore);
+        if (domainScore > 0)    breakdown.put("domainAge", domainScore);
+        if (sslScore > 0)       breakdown.put("ssl", sslScore);
+        if (urlScore > 0)       breakdown.put("url", urlScore);
+
+        // Hard override: if both blacklist and threat intel fire, it's 100% malicious
+        if (hasBlacklist && hasThreatIntel) {
+            breakdown.put("hardOverride", 100);
+            return new RiskScoreResult(100, breakdown);
+        }
+
+        total = Math.max(0, Math.min(100, total));
+        return new RiskScoreResult(total, breakdown);
+    }
+
+    private static Severity parseAiSeverity(String severity) {
+        if (severity == null) return Severity.LOW;
+        return switch (severity.toUpperCase()) {
+            case "HIGH" -> Severity.HIGH;
+            case "MEDIUM" -> Severity.MEDIUM;
+            default -> Severity.LOW;
+        };
+    }
+
+    private static Set<String> extractUrlsFromContent(EmailContent emailContent) {
+        if (emailContent.hasHtml()) {
+            return extractUrlsFromHtml(emailContent.getHtml());
+        } else {
+            return extractUrlsFromPlainText(emailContent.getText());
+        }
+    }
+
+    private static Set<String> extractUrlsFromHtml(String html) {
+        if (isBlank(html)) return new LinkedHashSet<>();
+        Set<String> urls = new LinkedHashSet<>();
+        Document doc = Jsoup.parse(html);
+        for (Element link : doc.select("a[href]")) {
+            String href = link.attr("href");
+            if (href.startsWith("http://") || href.startsWith("https://")) {
+                urls.add(href);
+            }
+        }
+        return urls;
+    }
+
+    private static Set<String> extractUrlsFromPlainText(String text) {
+        if (isBlank(text)) return new LinkedHashSet<>();
+        Set<String> urls = new LinkedHashSet<>();
+        Matcher matcher = PLAIN_TEXT_URL_PATTERN.matcher(text);
+        while (matcher.find()) {
+            urls.add(matcher.group(1));
+        }
+        return urls;
+    }
+
+    private void checkThreatIntelBlacklist(Set<String> urls, List<RiskFinding> findings) {
+        for (String url : urls) {
+            if (threatIntelService.isBlacklisted(url)) {
+                findings.add(new RiskFinding(url, "URL found in threat intelligence blacklist", Severity.HIGH));
+            }
+        }
+    }
+
+    private static void checkGoogleSafeBrowsing(Set<String> urls, String apiKey, List<RiskFinding> findings) {
+        if (isBlank(apiKey) || urls.isEmpty()) {
+            return;
+        }
+        try {
+            String requestBody = buildSafeBrowsingRequestBody(urls);
+            URI uri = URI.create("https://safebrowsing.googleapis.com/v4/threatMatches:find?key=" + apiKey);
+            URL url = uri.toURL();
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(NETWORK_TIMEOUT_MS);
+            connection.setReadTimeout(NETWORK_TIMEOUT_MS);
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setDoOutput(true);
+            try (OutputStream os = connection.getOutputStream()) {
+                os.write(requestBody.getBytes(StandardCharsets.UTF_8));
+            }
+            int responseCode = connection.getResponseCode();
+            if (responseCode == 200) {
+                String responseBody = readFully(connection.getInputStream());
+                Map<String, Set<String>> threatMap = parseSafeBrowsingResponse(responseBody);
+                for (Map.Entry<String, Set<String>> entry : threatMap.entrySet()) {
+                    String threatType = entry.getKey();
+                    for (String matchedUrl : entry.getValue()) {
+                        findings.add(new RiskFinding(matchedUrl, "Google Safe Browsing threat: " + threatType, safeBrowsingSeverity(threatType)));
+                    }
+                }
+            } else {
+                logWarning("Safe Browsing API returned " + responseCode, null);
+            }
+        } catch (Exception exception) {
+            logWarning("Failed to check Google Safe Browsing", exception);
+        }
+    }
+
+    private static String buildSafeBrowsingRequestBody(Set<String> urls) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{\"client\":{\"clientId\":\"phishing-scanner\",\"clientVersion\":\"1.0\"},\"threatInfo\":{\"threatTypes\":[\"MALWARE\",\"SOCIAL_ENGINEERING\"],\"platformTypes\":[\"ANY_PLATFORM\"],\"threatEntryTypes\":[\"URL\"],\"threatEntries\":[");
+        boolean first = true;
+        for (String url : urls) {
+            if (!first) sb.append(",");
+            sb.append("{\"url\":\"").append(escapeJson(url)).append("\"}");
+            first = false;
+        }
+        sb.append("]}}");
+        return sb.toString();
+    }
+
+    private static Map<String, Set<String>> parseSafeBrowsingResponse(String responseBody) {
+        Map<String, Set<String>> threatMap = new HashMap<>();
+        Matcher matcher = SAFE_BROWSING_MATCH_PATTERN.matcher(responseBody);
+        while (matcher.find()) {
+            String threatType = matcher.group(1);
+            String url = unescapeJson(matcher.group(2));
+            threatMap.computeIfAbsent(threatType, k -> new LinkedHashSet<>()).add(url);
+        }
+        return threatMap;
+    }
+
+    private static HeaderInspectionResult inspectAuthenticationHeaders(EmailRequest request, List<RiskFinding> findings) {
+        HeaderInspectionResult result = new HeaderInspectionResult();
+        if (request.getHeaders() == null) return result;
+        List<String> authResults = request.getHeaders().get("Authentication-Results");
+        if (authResults != null) {
+            for (String header : authResults) {
+                if (header.contains("spf=fail")) {
+                    result.spfFail = true;
+                    findings.add(new RiskFinding("SPF", "SPF check failed", Severity.MEDIUM));
+                }
+                if (header.contains("dkim=fail")) {
+                    result.dkimFail = true;
+                    findings.add(new RiskFinding("DKIM", "DKIM check failed", Severity.MEDIUM));
+                }
+                if (header.contains("dmarc=fail")) {
+                    result.dmarcFail = true;
+                    findings.add(new RiskFinding("DMARC", "DMARC check failed", Severity.MEDIUM));
+                }
+            }
+        }
+        List<String> returnPathHeaders = request.getHeaders().get("Return-Path");
+        if (returnPathHeaders != null && !returnPathHeaders.isEmpty()) {
+            String returnPath = returnPathHeaders.getFirst();
+            returnPath = returnPath.replaceAll("[<>]", "").trim();
+            String returnPathDomain = extractDomainFromAddresses(returnPath);
+            String fromDomain = extractFromDomain(request.getFrom());
+
+            String rootReturnPath = extractRootDomain(returnPathDomain);
+            String rootFrom = extractRootDomain(fromDomain);
+
+            if (!isBlank(rootReturnPath) && !rootReturnPath.equals(rootFrom)) {
+                result.returnPathMismatch = true;
+                findings.add(new RiskFinding(
+                        returnPath,
+                        "Return-Path domain (" + rootReturnPath + ") differs from From domain (" + rootFrom + ")",
+                        Severity.MEDIUM
+                ));
+            }
+        }
+        return result;
+    }
+
+    private static final Map<Character, Character> HOMOGLYPH_MAP = Map.ofEntries(
+            Map.entry('0', 'o'),
+            Map.entry('1', 'l'),
+            Map.entry('5', 's'),
+            Map.entry('8', 'b'),
+            Map.entry('6', 'g'),
+            Map.entry('3', 'e'),
+            Map.entry('4', 'a'),
+            Map.entry('7', 't'),
+            Map.entry('$', 's'),
+            Map.entry('@', 'a'),
+            Map.entry('!', 'i'),
+            Map.entry('|', 'l'),
+            Map.entry('\u02BC', '\'')
+    );
+
+    private static String toHomoglyphSkeleton(String domain) {
+        if (isBlank(domain)) return domain;
+        StringBuilder sb = new StringBuilder(domain.length());
+        for (char c : domain.toLowerCase().toCharArray()) {
+            sb.append(HOMOGLYPH_MAP.getOrDefault(c, c));
+        }
+        return sb.toString();
+    }
+
+    private static String findHomoglyphTarget(String domain, Set<String> trustedDomains) {
+        String skeleton = toHomoglyphSkeleton(domain);
+        if (!skeleton.equals(domain) && trustedDomains.contains(skeleton)) {
+            return skeleton;
+        }
+        for (Map.Entry<String, Set<String>> entry : BRAND_DOMAIN_MAP.entrySet()) {
+            for (String brandDomain : entry.getValue()) {
+                if (skeleton.equals(brandDomain) && !domain.equals(brandDomain)) {
+                    return brandDomain;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean detectDisplayNameMismatch(EmailRequest request, List<RiskFinding> findings) {
+        String from = request.getFrom();
+        List<String> fromHeaders = request.getHeaders().get("From");
+        if (fromHeaders == null || fromHeaders.isEmpty()) return false;
+        String displayName = extractDisplayName(fromHeaders.get(0));
+        if (isBlank(displayName)) return false;
+        String senderDomain = extractFromDomain(from);
+        for (String keyword : BRAND_DOMAIN_MAP.keySet()) {
+            if (displayName.toLowerCase().contains(keyword.toLowerCase())) {
+                if (!matchesBrandDomain(extractRootDomain(senderDomain), BRAND_DOMAIN_MAP.get(keyword))) {
+                    findings.add(new RiskFinding(displayName, "Display name contains brand '" + keyword + "' but sender domain does not match", Severity.MEDIUM));
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean detectReplyToMismatch(EmailRequest request, List<RiskFinding> findings) {
+        List<String> replyToHeaders = request.getHeaders().get("Reply-To");
+        if (replyToHeaders == null || replyToHeaders.isEmpty()) return false;
+        String replyToDomain = extractDomainFromAddresses(replyToHeaders.get(0));
+        String fromDomain = extractFromDomain(request.getFrom());
+        String rootReplyTo = extractRootDomain(replyToDomain);
+        String rootFrom = extractRootDomain(fromDomain);
+        if (!rootReplyTo.equals(rootFrom)) {
+            findings.add(new RiskFinding(replyToDomain, "Reply-To domain differs from From domain", Severity.LOW));
+            return true;
+        }
+        return false;
+    }
+
+    private static void inspectHomographDomains(
+            Map<String, String> urlDomainMap,
+            Set<String> trustedDomains,
+            List<RiskFinding> findings) {
+
+        for (Map.Entry<String, String> entry : urlDomainMap.entrySet()) {
+            String url = entry.getKey();
+            String domain = entry.getValue();
+
+            // IDN/Unicode check (existing)
+            if (containsNonAscii(domain)) {
+                findings.add(new RiskFinding(
+                        url,
+                        "Domain contains non-ASCII characters (potential homograph/IDN attack)",
+                        Severity.HIGH
+                ));
+            }
+
+            // Digit-letter substitution check
+            String rootDomain = extractRootDomain(domain);
+            String impersonatedDomain = findHomoglyphTarget(rootDomain, trustedDomains);
+            if (impersonatedDomain != null) {
+                findings.add(new RiskFinding(
+                        url,
+                        "Domain '" + rootDomain + "' appears to impersonate '" + impersonatedDomain
+                                + "' using character substitution (e.g. 0→o, 1→l)",
+                        Severity.HIGH
+                ));
+            }
+        }
+    }
+
+    private static boolean containsNonAscii(String domain) {
+        return !domain.equals(IDN.toASCII(domain));
+    }
+
+    private static Map<String, Integer> inspectDomainAges(Collection<String> domains, List<RiskFinding> findings) {
+        Map<String, Integer> domainAgeByRootDomain = new HashMap<>();
+        Set<String> uniqueRootDomains = new LinkedHashSet<>();
+        for (String domain : domains) {
+            String rootDomain = extractRootDomain(domain);
+            if (!isBlank(rootDomain)) {
+                uniqueRootDomains.add(rootDomain);
+            }
+        }
+
+        Map<String, Integer> ageByRootDomain = lookupDomainAgesBounded(uniqueRootDomains);
+        for (String domain : domains) {
+            String rootDomain = extractRootDomain(domain);
+            Integer age = ageByRootDomain.get(rootDomain);
+            domainAgeByRootDomain.put(rootDomain, age);
+            if (age != null && age < DOMAIN_AGE_SUSPICIOUS_THRESHOLD_DAYS) {
+                findings.add(new RiskFinding(rootDomain, "Domain is only " + age + " days old", Severity.MEDIUM));
+            }
+        }
+        return domainAgeByRootDomain;
+    }
+
+    private static Integer lookupDomainAgeInDays(String rootDomain) {
+        try {
+            String whoisResponse = queryWhoisServer("whois.iana.org", rootDomain);
+            String referralServer = extractWhoisReferralServer(whoisResponse);
+            if (referralServer != null) {
+                whoisResponse = queryWhoisServer(referralServer, rootDomain);
+            }
+            LocalDate creationDate = extractCreationDate(whoisResponse);
+            if (creationDate != null) {
+                return (int) ChronoUnit.DAYS.between(creationDate, LocalDate.now());
+            }
+        } catch (Exception exception) {
+            logWarning("Failed to lookup domain age for " + rootDomain, exception);
+        }
+        return null;
+    }
+
+    private static String queryWhoisServer(String server, String domain) throws IOException {
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress(server, 43), NETWORK_TIMEOUT_MS);
+            socket.setSoTimeout(WHOIS_READ_TIMEOUT_MS);
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+                 BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8))) {
+                writer.write(domain + "\r\n");
+                writer.flush();
+                StringBuilder response = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    response.append(line).append('\n');
+                }
+                return response.toString();
+            }
+        }
+    }
+
+    private static LocalDate extractCreationDate(String whoisResponse) {
+        Matcher matcher = WHOIS_CREATION_PATTERN.matcher(whoisResponse);
+        if (matcher.find()) {
+            return parseWhoisDateValue(matcher.group(1).trim());
+        }
+        return null;
+    }
+
+    private static String extractWhoisReferralServer(String whoisResponse) {
+        Matcher matcher = WHOIS_REFERRAL_PATTERN.matcher(whoisResponse);
+        if (matcher.find()) {
+            return matcher.group(1).trim();
+        }
+        return null;
+    }
+
+    private static LocalDate parseWhoisDateValue(String rawDate) {
+        for (DateTimeFormatter formatter : OFFSET_DATE_TIME_FORMATTERS) {
+            try {
+                OffsetDateTime odt = OffsetDateTime.parse(rawDate, formatter);
+                return odt.toLocalDate();
+            } catch (Exception ignored) {}
+        }
+        for (DateTimeFormatter formatter : LOCAL_DATE_TIME_FORMATTERS) {
+            try {
+                LocalDateTime ldt = LocalDateTime.parse(rawDate, formatter);
+                return ldt.toLocalDate();
+            } catch (Exception ignored) {}
+        }
+        for (DateTimeFormatter formatter : LOCAL_DATE_FORMATTERS) {
+            try {
+                return LocalDate.parse(rawDate, formatter);
+            } catch (Exception ignored) {}
+        }
+        return null;
+    }
+
+    private static void inspectTyposquatting(Collection<String> domains, Set<String> trustedDomains, List<RiskFinding> findings) {
+        for (String domain : domains) {
+            String similar = findSimilarTrustedDomain(domain, trustedDomains);
+            if (similar != null) {
+                findings.add(new RiskFinding(domain, "Potential typosquatting of trusted domain '" + similar + "'", Severity.MEDIUM));
+            }
+        }
+    }
+
+    private static String findSimilarTrustedDomain(String extractedDomain, Set<String> trustedDomains) {
+        // 1. First check if it's a perfect match (legitimate domain)
+        if (trustedDomains.contains(extractedDomain)) {
+            return null; // It's a trusted domain, no typosquatting here
+        }
+        // 2. Then check if it's a close match
+        for (String trusted : trustedDomains) {
+            if (levenshteinDistance(extractedDomain, trusted) <= 3) {
+                return trusted;
+            }
+        }
+        return null;
+    }
+
+    private static int levenshteinDistance(String left, String right) {
+        int len0 = left.length() + 1;
+        int len1 = right.length() + 1;
+        int[] cost = new int[len0];
+        int[] newcost = new int[len0];
+        for (int i = 0; i < len0; i++) cost[i] = i;
+        for (int j = 1; j < len1; j++) {
+            newcost[0] = j;
+            for (int i = 1; i < len0; i++) {
+                int match = (left.charAt(i - 1) == right.charAt(j - 1)) ? 0 : 1;
+                int cost_replace = cost[i - 1] + match;
+                int cost_insert = cost[i] + 1;
+                int cost_delete = newcost[i - 1] + 1;
+                newcost[i] = Math.min(Math.min(cost_insert, cost_delete), cost_replace);
+            }
+            int[] swap = cost;
+            cost = newcost;
+            newcost = swap;
+        }
+        return cost[len0 - 1];
+    }
+
+    private static void inspectSslCertificates(Set<String> urls, Map<String, Integer> domainAgeByRootDomain, List<RiskFinding> findings) {
+        for (String url : urls) {
+            try {
+                URI uri = URI.create(url);
+                if (!"https".equals(uri.getScheme())) continue;
+                String host = uri.getHost();
+                if (host == null) continue;
+                String rootDomain = extractRootDomain(host);
+                Integer domainAge = domainAgeByRootDomain.get(rootDomain);
+                URI uri_connection = URI.create(url);
+                HttpsURLConnection connection = (HttpsURLConnection) uri_connection.toURL().openConnection();
+                connection.setConnectTimeout(NETWORK_TIMEOUT_MS);
+                connection.setReadTimeout(NETWORK_TIMEOUT_MS);
+                connection.connect();
+                Certificate[] certs = connection.getServerCertificates();
+                if (certs.length > 0 && certs[0] instanceof X509Certificate) {
+                    X509Certificate cert = (X509Certificate) certs[0];
+                    Instant notBefore = cert.getNotBefore().toInstant();
+                    long daysSinceIssuance = ChronoUnit.DAYS.between(notBefore, Instant.now());
+                    if (daysSinceIssuance < CERTIFICATE_NEW_THRESHOLD_DAYS) {
+                        findings.add(new RiskFinding(url, "SSL certificate is very new (" + daysSinceIssuance + " days old)", Severity.LOW));
+                    }
+                    String issuer = cert.getIssuerX500Principal().getName();
+                    if (issuer.contains("Let's Encrypt") && domainAge != null && domainAge < LETS_ENCRYPT_DOMAIN_AGE_THRESHOLD_DAYS) {
+                        findings.add(new RiskFinding(url, "Let's Encrypt certificate on very new domain", Severity.MEDIUM));
+                    }
+                }
+                connection.disconnect();
+            } catch (java.net.UnknownHostException e) {
+                // Domain doesn't resolve — itself a signal, optionally add a LOW finding
+                findings.add(new RiskFinding(url, "Domain does not resolve (unresolvable host)", Severity.LOW));
+            } catch (SSLHandshakeException exception) {
+                findings.add(new RiskFinding(url, "SSL certificate validation failed", Severity.HIGH));
+            } catch (Exception exception) {
+                logWarning("Failed to inspect SSL certificate for " + url, exception);
+            }
+        }
+    }
+
+    private static Set<String> loadTrustedDomains() {
+        Set<String> trustedDomains = new LinkedHashSet<>();
+        Path appDir = resolveApplicationDirectory();
+        loadTrustedDomainsFromCsv(appDir.resolve(Paths.get("classes", "top-1m-Tranco.csv")), trustedDomains);
+        loadTrustedDomainsFromCsv(appDir.resolve(Paths.get("classes", "top-1m-umbrella.csv")), trustedDomains);
+        return trustedDomains;
+    }
+
+    private static void loadTrustedDomainsFromCsv(Path csvPath, Set<String> trustedDomains) {
+        if (!Files.exists(csvPath)) {
+            logWarning("Trusted domains CSV not found: " + csvPath, null);
+            return;
+        }
+        try {
+            List<String> lines = Files.readAllLines(csvPath, StandardCharsets.UTF_8);
+            for (String line : lines) {
+                if (trustedDomains.size() >= TRUSTED_DOMAIN_LIMIT_PER_FILE) break;
+                String[] parts = line.split(",");
+                if (parts.length >= 2) {
+                    String domain = parts[1].trim().toLowerCase();
+                    if (!domain.isEmpty()) {
+                        trustedDomains.add(domain);
+                    }
+                }
+            }
+        } catch (Exception exception) {
+            logWarning("Failed to load trusted domains from " + csvPath, exception);
+        }
+    }
+
+    private static RiskScoreResult calculateRiskScore(
+            List<RiskFinding> findings,
+            HeaderInspectionResult header,
+            boolean senderWhitelisted
+    ) {
+
+        int blacklistScore = 0;
+        int threatScore = 0;
+        int domainScore = 0;
+        int sslScore = 0;
+        int authScore = 0;
+        int socialScore = 0;
+        int urlScore = 0;
+        int aiScore = 0;
+        int whitelistScore = 0;
+
+        boolean hasBlacklist = false;
+        boolean hasThreatIntel = false;
+
+        // ── Process findings ──
+        for (RiskFinding f : findings) {
+            String desc = f.description().toLowerCase();
+            int score = f.scoreContribution();
+
+            // BLACKLIST
+            if (desc.contains("blacklisted") || desc.contains("blacklist")) {
+                blacklistScore += score;
+                hasBlacklist = true;
+                continue;
+            }
+
+            // Threat Intel
+            if (desc.contains("safe browsing")) {
+                threatScore += score;
+                hasThreatIntel = true;
+                continue;
+            }
+
+            // Domain
+            if (desc.contains("domain is only") ||
+                    desc.contains("typosquatting") ||
+                    desc.contains("homograph")) {
+                domainScore += score;
+                continue;
+            }
+
+            // SSL
+            if (desc.contains("ssl") ||
+                    desc.contains("certificate") ||
+                    desc.contains("does not resolve")) {
+                sslScore += score;
+                continue;
+            }
+
+            // Auth
+            if (desc.contains("spf") ||
+                    desc.contains("dkim") ||
+                    desc.contains("dmarc")) {
+                authScore += score;
+                continue;
+            }
+
+            // Social
+            if (desc.contains("display name") ||
+                    desc.contains("reply-to")) {
+                socialScore += score;
+                continue;
+            }
+
+            // URL behavior
+            if (desc.contains("redirect") ||
+                    desc.contains("shortener")) {
+                urlScore += score;
+                continue;
+            }
+
+            // AI
+            if (desc.contains("[ai]")) {
+                aiScore += score;
+            }
+        }
+
+        // ── Header bonus ──
+        if (header.spfFail && header.dkimFail && header.dmarcFail) {
+            authScore += 5;
+        }
+
+        // ── Whitelist logic ──
+        if (senderWhitelisted) {
+            whitelistScore -= 20;
+        }
+
+        // ── Apply caps ──
+        threatScore = Math.min(threatScore, 30);
+        domainScore = Math.min(domainScore, 20);
+        sslScore = Math.min(sslScore, 10);
+        authScore = Math.min(authScore, 15);
+        socialScore = Math.min(socialScore, 15);
+        urlScore = Math.min(urlScore, 5);
+        aiScore = Math.min(aiScore, 15);
+        whitelistScore = Math.max(whitelistScore, -20);
+
+        // ── Total ──
+        int total =
+                blacklistScore +
+                        threatScore +
+                        domainScore +
+                        sslScore +
+                        authScore +
+                        socialScore +
+                        urlScore +
+                        aiScore +
+                        whitelistScore;
+
+        Map<String, Integer> breakdown = new LinkedHashMap<>();
+        if (blacklistScore > 0) breakdown.put("blacklist", blacklistScore);
+        if (threatScore > 0) breakdown.put("threatIntel", threatScore);
+        if (domainScore > 0) breakdown.put("domainAge", domainScore);
+        if (sslScore > 0) breakdown.put("ssl", sslScore);
+        if (authScore > 0) breakdown.put("auth", authScore);
+        if (socialScore > 0) breakdown.put("social", socialScore);
+        if (urlScore > 0) breakdown.put("url", urlScore);
+        if (aiScore > 0) breakdown.put("ai", aiScore);
+        if (whitelistScore != 0) breakdown.put("whitelist", whitelistScore);
+
+        // ── HARD OVERRIDE ──
+        if (hasBlacklist && hasThreatIntel) {
+            breakdown.put("hardOverride", 100);
+            return new RiskScoreResult(100, breakdown);
+        }
+
+        // ── Normalize ──
+        total = Math.max(0, total);
+        total = Math.min(100, total);
+
+        return new RiskScoreResult(total, breakdown);
+    }
+
+    private static CategorizedFindings categorizeResults(List<RiskFinding> findings, Map<String, Integer> scoreBreakdown) {
+        CategorizedFindings cats = new CategorizedFindings();
+
+        for (RiskFinding f : findings) {
+            String desc = f.description().toLowerCase();
+            String target = f.target().toLowerCase();
+            if (desc.contains("spf") || desc.contains("dkim") || desc.contains("dmarc") || 
+                desc.contains("return-path") || desc.contains("reply-to") || desc.contains("display name") || 
+                desc.contains("sender") || target.equals("spf") || target.equals("dkim") || target.equals("dmarc")) {
+                cats.header().findings().add(f);
+            } else if (target.contains("[ai]")) {
+                if (desc.contains("subject") || target.contains("subject")) {
+                    cats.subject().findings().add(f);
+                } else {
+                    cats.body().findings().add(f);
+                }
+            } else if (desc.contains("subject") || target.contains("subject")) {
+                cats.subject().findings().add(f);
+            } else {
+                cats.links().findings().add(f);
+            }
+        }
+
+        for (Map.Entry<String, Integer> e : scoreBreakdown.entrySet()) {
+            String k = e.getKey();
+            if (k.equals("auth") || k.equals("social") || k.equals("whitelist")) {
+                cats.header().scoreBreakdown().put(k, e.getValue());
+            } else if (k.equals("ai")) {
+                cats.body().scoreBreakdown().put(k, e.getValue());
+            } else {
+                cats.links().scoreBreakdown().put(k, e.getValue());
+            }
+        }
+
+        return cats;
+    }
+
+    private static String extractFromDomain(String from) {
+        return extractDomainFromAddresses(from);
+    }
+
+    private static String extractDomainFromAddresses(String address) {
+        if (isBlank(address)) return "";
+        int atIndex = address.lastIndexOf('@');
+        if (atIndex == -1) return "";
+        return address.substring(atIndex + 1);
+    }
+
+    private static String extractDisplayName(String fromHeader) {
+        if (isBlank(fromHeader)) return null;
+        int ltIndex = fromHeader.indexOf('<');
+        if (ltIndex > 0) {
+            return fromHeader.substring(0, ltIndex).trim();
+        }
+        return null;
+    }
+
+    private static String extractDomainFromUrl(String url) {
+        try {
+            URI uri = URI.create(url);
+            String host = uri.getHost();
+            if (host != null) {
+                return IDN.toUnicode(host);
+            }
+        } catch (Exception ignored) {}
+        return "";
+    }
+
+    private static String normalizeDomain(String domain) {
+        if (isBlank(domain)) return "";
+        try {
+            return IDN.toASCII(domain.toLowerCase());
+        } catch (Exception ignored) {
+            return domain.toLowerCase();
+        }
+    }
+
+    private static String extractRootDomain(String domain) {
+        if (isBlank(domain)) return "";
+        String normalized = normalizeDomain(domain);
+        String[] parts = normalized.split("\\.");
+        if (parts.length < 2) return normalized;
+        String tld = parts[parts.length - 1];
+        String sld = parts[parts.length - 2];
+        if (COMMON_SECOND_LEVEL_TLDS.contains(sld + "." + tld)) {
+            if (parts.length >= 3) {
+                return parts[parts.length - 3] + "." + sld + "." + tld;
+            }
+        }
+        return sld + "." + tld;
+    }
+
+    private static String normalizeUrl(String rawUrl) {
+        if (isBlank(rawUrl)) return "";
+        try {
+            URI uri = URI.create(rawUrl);
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            int port = uri.getPort();
+            String path = uri.getPath();
+            String query = uri.getQuery();
+            if (host != null) {
+                host = normalizeDomain(host);
+            }
+            StringBuilder sb = new StringBuilder();
+            if (scheme != null) sb.append(scheme).append("://");
+            if (host != null) sb.append(host);
+            if (port != -1) sb.append(":").append(port);
+            if (path != null) sb.append(path);
+            if (query != null) sb.append("?").append(query);
+            return sb.toString();
+        } catch (Exception ignored) {
+            return rawUrl;
+        }
+    }
+
+    private static Map<String, String> buildUrlDomainMap(Set<String> urls) {
+        Map<String, String> map = new LinkedHashMap<>();
+        for (String url : urls) {
+            String domain = extractDomainFromUrl(url);
+            if (!domain.isEmpty()) {
+                map.put(url, domain);
+            }
+        }
+        return map;
+    }
+
+    private static boolean matchesBrandDomain(String senderRootDomain, Set<String> allowedDomains) {
+        for (String allowed : allowedDomains) {
+            if (senderRootDomain.equalsIgnoreCase(allowed) || senderRootDomain.endsWith("." + allowed)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Severity safeBrowsingSeverity(String threatType) {
+        return switch (threatType) {
+            case "MALWARE" -> Severity.HIGH;
+            case "SOCIAL_ENGINEERING" -> Severity.HIGH;
+            default -> Severity.MEDIUM;
+        };
+    }
+
+    private static Path resolveApplicationDirectory() {
+        try {
+            return Paths.get(PhishingScannerService.class.getProtectionDomain().getCodeSource().getLocation().toURI()).getParent();
+        } catch (Exception exception) {
+            return Paths.get(".");
+        }
+    }
+
+    private static String escapeJson(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
+    }
+
+    private static String unescapeJson(String value) {
+        return value.replace("\\\"", "\"").replace("\\\\", "\\").replace("\\n", "\n").replace("\\r", "\r").replace("\\t", "\t");
+    }
+
+    private static String readFully(InputStream inputStream) throws IOException {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                sb.append(line).append('\n');
+            }
+            return sb.toString();
+        }
+    }
+
+    private Map<String, RedirectChainResolver.RedirectChain> resolveRedirectsBounded(Set<String> urls) {
+        if (urls == null || urls.isEmpty()) {
+            return Map.of();
+        }
+
+        List<String> orderedUrls = new ArrayList<>(urls);
+        int poolSize = Math.clamp(orderedUrls.size(), 1, REDIRECT_MAX_THREADS);
+        ExecutorService executor = Executors.newFixedThreadPool(poolSize);
+        List<Future<RedirectChainResolver.RedirectChain>> futures = new ArrayList<>(orderedUrls.size());
+
+        try {
+            for (String url : orderedUrls) {
+                futures.add(executor.submit(() -> redirectChainResolver.resolve(url)));
+            }
+
+            Map<String, RedirectChainResolver.RedirectChain> results = new LinkedHashMap<>();
+            for (int i = 0; i < orderedUrls.size(); i++) {
+                String url = orderedUrls.get(i);
+                try {
+                    results.put(url, futures.get(i).get());
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    logWarning("Redirect resolution interrupted for " + url, exception);
+                    break;
+                } catch (ExecutionException exception) {
+                    logWarning("Redirect resolution failed for " + url, exception);
+                }
+            }
+            return results;
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private static Map<String, Integer> lookupDomainAgesBounded(Set<String> rootDomains) {
+        if (rootDomains == null || rootDomains.isEmpty()) {
+            return Map.of();
+        }
+
+        List<String> orderedRoots = new ArrayList<>(rootDomains);
+        int poolSize = Math.clamp(orderedRoots.size(), 1, WHOIS_MAX_THREADS);
+        ExecutorService executor = Executors.newFixedThreadPool(poolSize);
+        List<Future<Map.Entry<String, Integer>>> futures = new ArrayList<>(orderedRoots.size());
+
+        try {
+            for (String rootDomain : orderedRoots) {
+                Callable<Map.Entry<String, Integer>> task = () -> {
+                    Integer age = DOMAIN_AGE_CACHE.get(rootDomain);
+                    if (age == null) {
+                        age = lookupDomainAgeInDays(rootDomain);
+                        if (age != null) {
+                            DOMAIN_AGE_CACHE.putIfAbsent(rootDomain, age);
+                        }
+                    }
+                    return new AbstractMap.SimpleEntry<>(rootDomain, age);
+                };
+                futures.add(executor.submit(task));
+            }
+
+            Map<String, Integer> ageByRoot = new LinkedHashMap<>();
+            for (int i = 0; i < orderedRoots.size(); i++) {
+                String rootDomain = orderedRoots.get(i);
+                try {
+                    Map.Entry<String, Integer> entry = futures.get(i).get();
+                    ageByRoot.put(entry.getKey(), entry.getValue());
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    logWarning("WHOIS lookup interrupted for " + rootDomain, exception);
+                    break;
+                } catch (ExecutionException exception) {
+                    logWarning("WHOIS lookup failed for " + rootDomain, exception);
+                    ageByRoot.put(rootDomain, null);
+                }
+            }
+            return ageByRoot;
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private static long elapsedMillis(long startNs) {
+        return (System.nanoTime() - startNs) / 1_000_000;
+    }
+
+    private static int countUniqueRootDomains(Collection<String> domains) {
+        Set<String> roots = new LinkedHashSet<>();
+        for (String domain : domains) {
+            roots.add(extractRootDomain(domain));
+        }
+        return roots.size();
+    }
+
+    private static void logWarning(String message, Exception exception) {
+        if (exception != null) {
+                System.err.println("WARNING: " + message + ": " + exception.getMessage());
+            } else {
+                System.err.println("WARNING: " + message);
+            }
+    }
+
+    private static Map<String, Set<String>> buildBrandDomainMap() {
+        Map<String, Set<String>> map = new HashMap<>();
+        map.put("paypal", Set.of("paypal.com"));
+        map.put("ebay", Set.of("ebay.com"));
+        map.put("amazon", Set.of("amazon.com"));
+        map.put("google", Set.of("google.com"));
+        map.put("microsoft", Set.of("microsoft.com"));
+        map.put("apple", Set.of("apple.com"));
+        map.put("facebook", Set.of("facebook.com"));
+        map.put("twitter", Set.of("twitter.com"));
+        map.put("linkedin", Set.of("linkedin.com"));
+        map.put("instagram", Set.of("instagram.com"));
+        map.put("bank", Set.of("bank.com"));
+        map.put("chase", Set.of("chase.com"));
+        map.put("wells fargo", Set.of("wellsfargo.com"));
+        map.put("citi", Set.of("citi.com"));
+        map.put("irs", Set.of("irs.gov"));
+        map.put("fedex", Set.of("fedex.com"));
+        map.put("ups", Set.of("ups.com"));
+        map.put("dhl", Set.of("dhl.com"));
+        return map;
+    }
+
+    private static List<DateTimeFormatter> buildOffsetDateTimeFormatters() {
+        return List.of(
+            new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("yyyy-MM-dd HH:mm:ss Z").toFormatter(Locale.ENGLISH),
+            new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("yyyy-MM-dd'T'HH:mm:ssZ").toFormatter(Locale.ENGLISH),
+            new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("yyyy-MM-dd HH:mm:ss").appendOffset("+HHMM", "Z").toFormatter(Locale.ENGLISH),
+            new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("yyyy.MM.dd HH:mm:ss Z").toFormatter(Locale.ENGLISH),
+            new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("dd-MMM-yyyy HH:mm:ss Z").toFormatter(Locale.ENGLISH)
+        );
+    }
+
+    private static List<DateTimeFormatter> buildLocalDateTimeFormatters() {
+        return List.of(
+            new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("yyyy-MM-dd HH:mm:ss").toFormatter(Locale.ENGLISH),
+            new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("yyyy-MM-dd'T'HH:mm:ss").toFormatter(Locale.ENGLISH),
+            new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("yyyy.MM.dd HH:mm:ss").toFormatter(Locale.ENGLISH),
+            new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("dd-MMM-yyyy HH:mm:ss").toFormatter(Locale.ENGLISH)
+        );
+    }
+
+    private static List<DateTimeFormatter> buildLocalDateFormatters() {
+        return List.of(
+            DateTimeFormatter.ISO_LOCAL_DATE,
+            new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("yyyy/MM/dd").toFormatter(Locale.ENGLISH),
+            new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("yyyy.MM.dd").toFormatter(Locale.ENGLISH),
+            new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("dd-MMM-yyyy").toFormatter(Locale.ENGLISH),
+            new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("MMM dd yyyy").toFormatter(Locale.ENGLISH)
+        );
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private static String defaultString(String value, String fallback) {
+        return value == null ? fallback : value;
+    }
+}
