@@ -1,4 +1,4 @@
-import { getApiConfig } from '../shared/storage.js';
+import { getApiConfig, getAuthSession } from '../shared/storage.js';
 import { buildMockScanResult } from '../shared/mock-scan-result.js';
 
 function normalizeHeaders(headers = {}) {
@@ -186,7 +186,8 @@ export async function scanEmailWithApi(payload) {
     method: 'POST',
     headers: {
       'Accept': 'application/json',
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      ...(await getAuthorizationHeader())
     },
     body: JSON.stringify(apiPayload)
   });
@@ -210,4 +211,10 @@ export async function scanEmailWithApi(payload) {
 
   const apiResult = await response.json();
   return mapApiResultToExtensionShape(apiResult, payload);
+}
+
+async function getAuthorizationHeader() {
+  const session = await getAuthSession();
+  const token = session?.accessToken || '';
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }

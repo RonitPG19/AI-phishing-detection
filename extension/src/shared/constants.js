@@ -16,6 +16,8 @@ export const DEFAULT_API_CONFIG = {
   enabled: true
 };
 
+export const SPRING_API_BASE_URL = 'http://127.0.0.1:8080';
+
 export const DEFAULT_AUTH_CONFIG = {
   baseUrl: 'http://127.0.0.1:5001'
 };

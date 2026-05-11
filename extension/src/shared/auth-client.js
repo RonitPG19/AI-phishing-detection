@@ -96,11 +96,19 @@ export async function loginWithFirebaseAndFlask({ email, password }) {
   return exchangeFirebaseTokenForSession({
     firebaseIdToken,
     fallbackEmail: credentials.user.email || email,
-    fallbackProvider: 'firebase'
+    fallbackProvider: 'firebase',
+    fallbackName: credentials.user.displayName || '',
+    fallbackPicture: credentials.user.photoURL || ''
   });
 }
 
-async function exchangeFirebaseTokenForSession({ firebaseIdToken, fallbackEmail, fallbackProvider }) {
+async function exchangeFirebaseTokenForSession({
+  firebaseIdToken,
+  fallbackEmail,
+  fallbackProvider,
+  fallbackName = '',
+  fallbackPicture = ''
+}) {
   const authData = await requestFlask('/api/auth/login', {
     method: 'POST',
     headers: {
@@ -122,7 +130,9 @@ async function exchangeFirebaseTokenForSession({ firebaseIdToken, fallbackEmail,
     user: {
       ...(user || {}),
       email: user?.email || fallbackEmail || '',
-      provider: user?.provider || fallbackProvider || 'firebase'
+      provider: user?.provider || fallbackProvider || 'firebase',
+      name: user?.name || fallbackName || '',
+      picture: user?.picture || fallbackPicture || ''
     },
     loggedInAt: new Date().toISOString()
   };
@@ -140,7 +150,9 @@ export async function loginWithGoogleAndFlask() {
   return exchangeFirebaseTokenForSession({
     firebaseIdToken,
     fallbackEmail: credentials.user.email || '',
-    fallbackProvider: 'google'
+    fallbackProvider: 'google',
+    fallbackName: credentials.user.displayName || '',
+    fallbackPicture: credentials.user.photoURL || ''
   });
 }
 

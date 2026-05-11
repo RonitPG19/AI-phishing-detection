@@ -5,16 +5,24 @@ import {
   getLastScanDebug,
   getScanHistory,
   saveScanHistory,
+  saveAuthSession,
   saveWidgetPreferences
 } from '../shared/storage.js';
 import { RUNTIME_MESSAGES } from '../shared/constants.js';
 import {
   loginWithFirebaseAndFlask,
-  loginWithGoogleAndFlask,
   logoutFromFirebaseAndFlask,
   sendFirebasePasswordReset,
   signUpWithFirebase
 } from '../shared/auth-client.js';
+import {
+  fetchMailboxConnections,
+  getMailboxMessage,
+  getProviderLabel,
+  listMailboxMessages,
+  mailboxMessageToScanPayload,
+  startMailboxOAuth
+} from '../shared/mailbox-client.js';
 
 const ICONS = {
   shield: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
@@ -33,7 +41,8 @@ const ICONS = {
   'eye-off': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 3 18 18"/><path d="M10.58 10.58a2 2 0 0 0 2.83 2.83"/><path d="M9.88 5.09A10.94 10.94 0 0 1 12 4.9c5 0 9.27 3.11 11 7.5a11.8 11.8 0 0 1-1.67 2.68"/><path d="M6.61 6.61A11.84 11.84 0 0 0 1 12.4c1.73 4.39 6 7.5 11 7.5 1.87 0 3.63-.44 5.2-1.22"/></svg>`,
   user: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21a7 7 0 0 0-14 0"/><circle cx="12" cy="8" r="4"/></svg>`,
   power: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>`,
-  google: `<svg viewBox="0 0 24 24" fill="none"><path d="M21.8 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.5c-.2 1.2-.9 2.3-1.9 3v2.5h3.1c1.8-1.7 3.1-4.2 3.1-7.3Z" fill="currentColor"/><path d="M12 22c2.7 0 4.9-.9 6.6-2.5l-3.1-2.5c-.9.6-2 .9-3.5.9-2.7 0-4.9-1.8-5.7-4.2H3.1v2.6A10 10 0 0 0 12 22Z" fill="currentColor"/><path d="M6.3 13.7c-.2-.6-.3-1.1-.3-1.7s.1-1.2.3-1.7V7.7H3.1A10 10 0 0 0 2 12c0 1.6.4 3 1.1 4.3l3.2-2.6Z" fill="currentColor"/><path d="M12 6.1c1.5 0 2.8.5 3.9 1.5l2.9-2.9C16.9 2.9 14.7 2 12 2A10 10 0 0 0 3.1 7.7l3.2 2.6c.8-2.4 3-4.2 5.7-4.2Z" fill="currentColor"/></svg>`,
+  google: `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M21.8 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.5c-.2 1.2-.9 2.3-1.9 3v2.5h3.1c1.8-1.7 3.1-4.2 3.1-7.3Z" fill="#4285F4"/><path d="M12 22c2.7 0 4.9-.9 6.6-2.5l-3.1-2.5c-.9.6-2 .9-3.5.9-2.7 0-4.9-1.8-5.7-4.2H3.1v2.6A10 10 0 0 0 12 22Z" fill="#34A853"/><path d="M6.3 13.7c-.2-.6-.3-1.1-.3-1.7s.1-1.2.3-1.7V7.7H3.1A10 10 0 0 0 2 12c0 1.6.4 3 1.1 4.3l3.2-2.6Z" fill="#FBBC05"/><path d="M12 6.1c1.5 0 2.8.5 3.9 1.5l2.9-2.9C16.9 2.9 14.7 2 12 2A10 10 0 0 0 3.1 7.7l3.2 2.6c.8-2.4 3-4.2 5.7-4.2Z" fill="#EA4335"/></svg>`,
+  microsoft: `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1.2" fill="#F25022"/><rect x="13" y="3" width="8" height="8" rx="1.2" fill="#7FBA00"/><rect x="3" y="13" width="8" height="8" rx="1.2" fill="#00A4EF"/><rect x="13" y="13" width="8" height="8" rx="1.2" fill="#FFB900"/></svg>`,
   palette: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.647-.494 2.158-1.006.511-.512 1.158-1.406 2.058-2.31 1.62-.05 3.018-.28 4.194-1.282.871-.741 1.59-1.895 1.59-3.402C22 7.5 17.5 2 12 2z"/></svg>`,
   'layout-list': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/><path d="M14 4h7"/><path d="M14 9h7"/><path d="M14 15h7"/><path d="M14 20h7"/></svg>`,
   mail: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>`,
@@ -57,8 +66,12 @@ const DEFAULT_SETTINGS = {
   scanPortions: { header: true, subject: true, body: true, footer: true, links: true, attachments: true }
 };
 const AUTH_FORM_MODE_KEY = 'tribunal_auth_form_mode';
+const CURRENT_PAGE_KEY = 'tribunal_current_page';
+const VALID_PAGES = new Set(['scan', 'history', 'debug', 'profile', 'settings']);
 
-let currentPage = 'scan';
+let currentPage = VALID_PAGES.has(localStorage.getItem(CURRENT_PAGE_KEY))
+  ? localStorage.getItem(CURRENT_PAGE_KEY)
+  : 'scan';
 let scanResults = null;
 let scanError = '';
 let scanRequiresRefresh = false;
@@ -79,6 +92,12 @@ let authDraft = {
   confirmPassword: ''
 };
 let remoteHistoryHydrated = false;
+let mailboxProvider = 'google';
+let mailboxConnections = [];
+let mailboxMessages = [];
+let mailboxLoading = false;
+let mailboxError = '';
+let pageRenderToken = 0;
 
 const SCAN_STAGES = ['Extracting', 'Sending', 'Analyzing', 'Finalizing'];
 
@@ -261,22 +280,49 @@ function mapRemoteSections(sections = {}) {
   };
 }
 
-function mapRemoteReportToHistoryEntry(report = {}) {
-  const score = Number(report.overallRiskScore) || 0;
+function mapRemoteHistoryItemToHistoryEntry(item = {}) {
+  const score = Number(item.overallRiskScore) || 0;
   return {
     source: 'api',
     status: 'completed',
     overallThreat: threatFromScore(score),
     overallRiskScore: score,
     issueCount: 0,
-    sections: mapRemoteSections(report.sections || {}),
-    timestamp: report.savedAt || new Date().toISOString(),
-    emailSubject: report.subject || 'Current message',
-    message: 'Loaded from server history.',
-    reportId: report.id || null,
-    headerInspectionResult: report.headerInspectionResult || null,
-    aiAnalysis: report.aiAnalysis || null
+    sections: mapRemoteSections({}),
+    timestamp: item.requestedAt || new Date().toISOString(),
+    emailSubject: item.subject || item.requestSummary?.subjectSnippet || 'Current message',
+    message: 'Loaded from account scan history.',
+    reportId: item.reportId || null,
+    historyId: item.historyId || null,
+    headerInspectionResult: null,
+    aiAnalysis: null,
+    detailLoaded: false
   };
+}
+
+function mapRemoteReportToHistoryEntry(report = {}, fallback = {}) {
+  const score = Number(report.overallRiskScore ?? fallback.overallRiskScore) || 0;
+  return {
+    ...fallback,
+    source: 'api',
+    status: 'completed',
+    overallThreat: threatFromScore(score),
+    overallRiskScore: score,
+    issueCount: 0,
+    sections: mapRemoteSections(report.sections || {}),
+    timestamp: fallback.timestamp || report.savedAt || report.scannedAt || new Date().toISOString(),
+    emailSubject: report.subject || fallback.emailSubject || 'Current message',
+    message: 'Loaded from account scan history.',
+    reportId: report.id || fallback.reportId || null,
+    historyId: fallback.historyId || null,
+    headerInspectionResult: report.headerInspectionResult || fallback.headerInspectionResult || null,
+    aiAnalysis: report.aiAnalysis || fallback.aiAnalysis || null,
+    detailLoaded: true
+  };
+}
+
+function getPhishingApiRoot(endpoint = '') {
+  return String(endpoint || '').replace(/\/scan\/?$/, '');
 }
 
 function mergeHistory(localHistory = [], remoteHistory = []) {
@@ -310,17 +356,21 @@ async function hydrateRemoteHistoryIfNeeded() {
       return;
     }
 
-    const reportsEndpoint = String(config.endpoint).replace(/\/scan\/?$/, '/reports?limit=50');
-    const response = await fetch(reportsEndpoint, { method: 'GET', headers: { Accept: 'application/json' } });
+    const historyEndpoint = `${getPhishingApiRoot(config.endpoint)}/history?limit=50`;
+    const response = await fetch(historyEndpoint, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${authSession.accessToken}`
+      }
+    });
     if (!response.ok) {
       return;
     }
 
     const payload = await response.json();
-    const remoteReports = Array.isArray(payload) ? payload : [];
-    const mappedRemote = remoteReports
-      .filter((report) => String(report?.type || '').toLowerCase() !== 'link_scan')
-      .map(mapRemoteReportToHistoryEntry);
+    const remoteItems = Array.isArray(payload?.items) ? payload.items : [];
+    const mappedRemote = remoteItems.map(mapRemoteHistoryItemToHistoryEntry);
 
     if (!mappedRemote.length) {
       return;
@@ -331,6 +381,45 @@ async function hydrateRemoteHistoryIfNeeded() {
     await saveScanHistory(merged);
   } catch {
     // Best-effort hydration; local history continues to work even when server history fetch fails.
+  }
+}
+
+async function fetchRemoteReport(reportId) {
+  const config = await getApiConfig();
+  if (!config?.enabled || !config?.endpoint || !reportId) {
+    throw new Error('Report details are unavailable.');
+  }
+
+  const response = await fetch(`${getPhishingApiRoot(config.endpoint)}/reports/${encodeURIComponent(reportId)}`, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${authSession.accessToken}`
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Report details request failed with status ${response.status}`);
+  }
+
+  return response.json();
+}
+
+async function ensureHistoryDetailLoaded(index, history) {
+  const entry = history[index];
+  if (!entry || entry.detailLoaded || !entry.reportId) {
+    return entry;
+  }
+
+  try {
+    const report = await fetchRemoteReport(entry.reportId);
+    const enriched = mapRemoteReportToHistoryEntry(report, entry);
+    const nextHistory = [...history];
+    nextHistory[index] = enriched;
+    await saveScanHistory(nextHistory);
+    return enriched;
+  } catch {
+    return entry;
   }
 }
 
@@ -352,7 +441,7 @@ function setAuthFormMode(mode) {
 }
 
 async function syncAuthState() {
-  authSession = await getAuthSession();
+  authSession = await normalizeAuthSession(await getAuthSession());
 }
 
 function renderAuthMessage() {
@@ -369,6 +458,62 @@ function renderAuthMessage() {
 
 function hasAuthSession() {
   return Boolean(authSession?.accessToken);
+}
+
+function decodeJwtClaims(token = '') {
+  try {
+    const payload = String(token).split('.')[1] || '';
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(normalized.length + ((4 - normalized.length % 4) % 4), '=');
+    return JSON.parse(decodeURIComponent(escape(atob(padded))));
+  } catch {
+    return {};
+  }
+}
+
+async function normalizeAuthSession(session = {}) {
+  if (!session?.accessToken) {
+    return session;
+  }
+
+  const claims = decodeJwtClaims(session.accessToken);
+  const currentUser = session.user || {};
+  const nextUser = {
+    ...currentUser,
+    provider: currentUser.provider && currentUser.provider !== 'oauth'
+      ? currentUser.provider
+      : claims.provider || currentUser.provider || 'oauth',
+    uid: currentUser.uid && currentUser.uid !== 'spring-oauth-user'
+      ? currentUser.uid
+      : claims.sub || currentUser.uid || '',
+    email: currentUser.email || claims.email || '',
+    name: currentUser.name || claims.name || '',
+    picture: currentUser.picture || currentUser.photoURL || claims.picture || ''
+  };
+  const nextSession = { ...session, user: nextUser };
+
+  if (JSON.stringify(nextSession.user) !== JSON.stringify(currentUser)) {
+    await saveAuthSession(nextSession);
+  }
+
+  return nextSession;
+}
+
+function getProfileAvatarUrl() {
+  const url = authSession?.user?.picture || authSession?.user?.photoURL || '';
+  return /^https?:\/\//i.test(url) ? url : '';
+}
+
+function renderProfileAvatar() {
+  const avatarUrl = getProfileAvatarUrl();
+  if (avatarUrl) {
+    return `
+      <div class="profile-avatar has-image">
+        <img src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(getAuthDisplayName())}" referrerpolicy="no-referrer" />
+      </div>`;
+  }
+
+  return '<div class="profile-avatar"><i data-icon="user"></i></div>';
 }
 
 function renderAuthPage() {
@@ -423,11 +568,14 @@ function renderAuthPage() {
 
         ${authFormMode === 'login' ? `
           <div class="auth-divider"><span>or</span></div>
-          <button class="btn-secondary auth-action-btn auth-google-btn" id="auth-google-btn" type="button" aria-disabled="true">
-            <i data-icon="google"></i>
-            Sign in with Google
-          </button>
-          
+          <div class="oauth-login-grid">
+            <button class="btn-secondary auth-action-btn" data-oauth-login-provider="google" type="button">
+              <i data-icon="google"></i> Continue with Gmail
+            </button>
+            <button class="btn-secondary auth-action-btn" data-oauth-login-provider="outlook" type="button">
+              <i data-icon="microsoft"></i> Continue with Outlook
+            </button>
+          </div>
         ` : ''}
 
         ${authFormMode === 'login' ? `
@@ -453,12 +601,10 @@ function renderProfilePage() {
       </div>`;
   }
 
-  const createdAt = authSession?.user?.created_at || authSession?.loggedInAt || null;
-
   return `
     <div class="page-enter">
       <div class="profile-hero">
-        <div class="profile-avatar"><i data-icon="user"></i></div>
+        ${renderProfileAvatar()}
         <div class="profile-title">Your Profile</div>
         <div class="profile-subtitle">Signed in and ready to scan.</div>
       </div>
@@ -472,12 +618,6 @@ function renderProfilePage() {
           <span class="auth-session-label">Signed in</span>
           <span class="auth-session-value">${escapeHtml(formatTimestamp(authSession?.loggedInAt || new Date().toISOString()))}</span>
         </div>
-        ${createdAt ? `
-          <div class="auth-session-row">
-            <span class="auth-session-label">Account created</span>
-            <span class="auth-session-value">${escapeHtml(formatTimestamp(createdAt))}</span>
-          </div>
-        ` : ''}
         ${renderAuthMessage()}
         <button class="btn-secondary auth-action-btn" id="auth-logout-btn" ${isAuthSubmitting ? 'disabled' : ''}>
           <i data-icon="power"></i> ${isAuthSubmitting ? 'Signing out...' : 'Logout'}
@@ -552,7 +692,68 @@ function renderResultView(result) {
     </div>`;
 }
 
+function isMailboxConnected(provider) {
+  return mailboxConnections.some((connection) =>
+    connection?.provider === provider && Boolean(connection.connected)
+  );
+}
+
+function renderMailboxPanel() {
+  const messagesForProvider = mailboxMessages.filter((message) => message.provider === mailboxProvider);
+
+  return `
+    <div class="mailbox-panel">
+      <div class="mailbox-panel-head">
+        <div>
+          <div class="mailbox-title">Mailbox API</div>
+          <div class="mailbox-copy">Optional OAuth path for recent mail and attachments.</div>
+        </div>
+        <span class="badge badge-${isMailboxConnected(mailboxProvider) ? 'safe' : 'low'}">
+          ${isMailboxConnected(mailboxProvider) ? 'connected' : 'optional'}
+        </span>
+      </div>
+
+      <div class="mailbox-provider-tabs" role="tablist" aria-label="Mailbox provider">
+        ${['google', 'outlook'].map((provider) => `
+          <button class="mailbox-provider-tab ${mailboxProvider === provider ? 'active' : ''}" data-mailbox-provider="${provider}" type="button">
+            ${escapeHtml(getProviderLabel(provider))}
+          </button>
+        `).join('')}
+      </div>
+
+      ${authNotice ? `<div class="auth-message auth-message-success">${escapeHtml(authNotice)}</div>` : ''}
+      ${mailboxError ? `<div class="auth-message auth-message-error">${escapeHtml(mailboxError)}</div>` : ''}
+
+      <div class="mailbox-actions">
+        <button class="btn-secondary" id="mailbox-connect-btn" type="button">
+          <i data-icon="link"></i> Connect
+        </button>
+        <button class="btn-secondary" id="mailbox-load-btn" type="button" ${mailboxLoading ? 'disabled' : ''}>
+          <i data-icon="mail"></i> ${mailboxLoading ? 'Loading...' : 'Recent Mail'}
+        </button>
+      </div>
+
+      ${messagesForProvider.length ? `
+        <div class="mailbox-list">
+          ${messagesForProvider.map((message) => `
+            <button class="mailbox-message" data-mailbox-message-id="${escapeHtml(message.id)}" type="button">
+              <span class="mailbox-message-main">
+                <span class="mailbox-message-subject">${escapeHtml(truncate(message.subject || '(No subject)', 42))}</span>
+                <span class="mailbox-message-meta">${escapeHtml(truncate(message.from || 'Unknown sender', 42))}</span>
+              </span>
+              <span class="badge badge-${message.hasAttachments ? 'medium' : 'safe'}">${message.hasAttachments ? 'attach' : 'mail'}</span>
+            </button>
+          `).join('')}
+        </div>
+      ` : ''}
+    </div>`;
+}
+
 function renderScanPage() {
+  if (currentPage !== 'scan') {
+    return;
+  }
+
   const container = document.getElementById('page-container');
   const settings = getSettings();
 
@@ -580,7 +781,17 @@ function renderScanPage() {
     return;
   }
 
-  container.innerHTML = `<div class="scan-hero page-enter"><i data-icon="shield" class="scan-hero-icon"></i><p class="scan-empty-text">Open Gmail or Outlook in the active tab, then click Scan Now to analyze the current email.</p><div class="scan-btn-wrap"><button class="btn-primary" id="scan-btn" ${!settings.enabled ? 'disabled' : ''}><i data-icon="scan-search"></i> Scan Now</button>${!settings.enabled ? '<p class="scan-disabled-hint">Enable extension in Settings</p>' : ''}</div></div>`;
+  container.innerHTML = `
+    <div class="page-enter">
+      <div class="scan-hero scan-hero-primary">
+        <i data-icon="shield" class="scan-hero-icon"></i>
+        <p class="scan-empty-text">Open Gmail or Outlook in the active tab, then scan the current email.</p>
+        <div class="scan-btn-wrap">
+          <button class="btn-primary" id="scan-btn" ${!settings.enabled ? 'disabled' : ''}><i data-icon="scan-search"></i> Scan Current Tab</button>
+          ${!settings.enabled ? '<p class="scan-disabled-hint">Enable extension in Settings</p>' : ''}
+        </div>
+      </div>
+    </div>`;
   injectIcons(container);
 }
 
@@ -597,7 +808,11 @@ async function renderHistoryPage() {
   const history = await getScanHistory();
 
   if (historyDetailIndex !== null && history[historyDetailIndex]) {
-    const result = history[historyDetailIndex];
+    let result = history[historyDetailIndex];
+    if (!result.detailLoaded && result.reportId) {
+      container.innerHTML = `<div class="scan-loading page-enter"><div class="spinner" aria-label="Loading report details"></div><p class="scan-loading-text">Loading full report...</p></div>`;
+      result = await ensureHistoryDetailLoaded(historyDetailIndex, history);
+    }
     const issueCount = getIssueCount(result);
     container.innerHTML = `<div class="page-enter"><button class="back-btn" id="history-back-btn"><i data-icon="arrow-left"></i> Back to History</button><div class="results-summary"><div class="results-threat-label">${escapeHtml(String(result.overallThreat || 'safe').toUpperCase())} RISK</div><div class="results-issue-count">${issueCount} issue${issueCount === 1 ? '' : 's'} found</div><div class="results-source">Source: ${escapeHtml(getResultSourceLabel(result))}</div><p style="margin-top:4px;font-size:12px;color:var(--text-muted)">${escapeHtml(formatTimestamp(result.timestamp))} - ${escapeHtml(truncate(result.emailSubject || 'Current message', 52))}</p></div><div class="section-group">${Object.entries(result.sections || {}).map(([key, section]) => renderSection(key, section)).join('')}</div></div>`;
     injectIcons(container);
@@ -623,6 +838,7 @@ function renderSettingsPage() {
 }
 
 async function renderDebugPage() {
+  const renderToken = ++pageRenderToken;
   const container = document.getElementById('page-container');
 
   if (!hasAuthSession()) {
@@ -635,23 +851,32 @@ async function renderDebugPage() {
   injectIcons(container);
 
   const debug = await getLastScanDebug();
+  if (renderToken !== pageRenderToken || currentPage !== 'debug') {
+    return;
+  }
   container.innerHTML = `<div class="page-enter"><div class="settings-section"><div class="settings-section-title"><i data-icon="file-text"></i> Debug Payload</div><p class="debug-intro">Inspect the exact normalized JSON produced by the most recent scan.</p><p class="debug-meta">Last updated: ${escapeHtml(debug.updatedAt ? formatTimestamp(debug.updatedAt) : 'No scan yet')}</p><p class="debug-meta">Result source: ${escapeHtml(debug.result ? getResultSourceLabel(debug.result) : 'No result yet')}</p></div><div class="debug-actions"><button class="btn-secondary" id="refresh-debug-btn"><i data-icon="rotate-ccw"></i> Refresh</button><button class="btn-secondary" id="copy-debug-payload-btn"><i data-icon="clipboard"></i> Copy Payload</button><button class="btn-secondary" id="copy-debug-result-btn"><i data-icon="clipboard"></i> Copy Result</button></div><div class="debug-card"><div class="debug-card-title">Payload JSON</div><pre class="debug-pre">${escapeHtml(prettyJson(debug.payload))}</pre></div><div class="debug-card"><div class="debug-card-title">Result JSON</div><pre class="debug-pre">${escapeHtml(prettyJson(debug.result))}</pre></div></div>`;
   injectIcons(container);
 }
 function navigateTo(page) {
-  currentPage = page;
+  currentPage = VALID_PAGES.has(page) ? page : 'scan';
+  localStorage.setItem(CURRENT_PAGE_KEY, currentPage);
   historyDetailIndex = null;
 
+  syncTabState();
+  renderCurrentPage();
+}
+
+function syncTabState() {
   document.querySelectorAll('.tab-item').forEach((tab) => {
     const active = tab.dataset.page === currentPage;
     tab.classList.toggle('active', active);
     tab.setAttribute('aria-selected', String(active));
   });
-
-  renderCurrentPage();
 }
 
 function renderCurrentPage() {
+  syncTabState();
+
   if (currentPage === 'history') {
     renderHistoryPage();
     return;
@@ -843,6 +1068,85 @@ async function requestActiveScan() {
   throw new Error('Mail tab connection was lost. Please refresh the mail tab and try again.');
 }
 
+async function requestBackgroundScan(payload) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ type: RUNTIME_MESSAGES.SCAN_EMAIL, payload }, (response) => {
+      const runtimeError = chrome.runtime.lastError?.message || '';
+      if (runtimeError) {
+        reject(new Error(runtimeError));
+        return;
+      }
+
+      if (!response) {
+        reject(new Error('No scan response was returned from the background service.'));
+        return;
+      }
+
+      if (response.ok === false) {
+        reject(new Error(response.error || 'The selected mailbox message could not be scanned.'));
+        return;
+      }
+
+      resolve(response.result || response);
+    });
+  });
+}
+
+async function loadMailboxForProvider(provider = mailboxProvider) {
+  mailboxProvider = provider;
+  mailboxLoading = true;
+  mailboxError = '';
+  renderCurrentPage();
+
+  try {
+    mailboxConnections = await fetchMailboxConnections().catch(() => []);
+    const messages = await listMailboxMessages(provider, 10);
+    mailboxMessages = [
+      ...mailboxMessages.filter((message) => message.provider !== provider),
+      ...messages.map((message) => ({ ...message, provider }))
+    ];
+  } catch (error) {
+    mailboxError = error.message || `Could not load ${getProviderLabel(provider)} messages.`;
+  } finally {
+    mailboxLoading = false;
+    renderCurrentPage();
+  }
+}
+
+async function scanMailboxMessage(messageId, provider = mailboxProvider) {
+  if (!messageId) {
+    return;
+  }
+
+  isScanning = true;
+  scanStageVersion += 1;
+  const currentScanVersion = scanStageVersion;
+  setScanStage(0);
+  scanResults = null;
+  scanError = '';
+  scanRequiresRefresh = false;
+  renderScanPage();
+
+  try {
+    await advanceScanStage(0, 180, currentScanVersion);
+    const mail = await getMailboxMessage(provider, messageId);
+    await advanceScanStage(1, 180, currentScanVersion);
+    const payload = mailboxMessageToScanPayload(mail, provider);
+    const result = await requestBackgroundScan(payload);
+    await advanceScanStage(2, 250, currentScanVersion);
+    await advanceScanStage(3, 180, currentScanVersion);
+    scanResults = result;
+  } catch (error) {
+    scanError = error.message || 'Unable to scan the selected mailbox message.';
+    scanRequiresRefresh = false;
+  } finally {
+    isScanning = false;
+    scanStageVersion += 1;
+    scanStageIndex = 0;
+    renderScanPage();
+  }
+}
+
 async function startScan() {
   if (!hasAuthSession()) {
     authError = 'Log in first to run scans.';
@@ -974,25 +1278,6 @@ async function handleLogout() {
   }
 }
 
-async function handleGoogleAuth() {
-  authError = '';
-  authNotice = '';
-  isAuthSubmitting = true;
-  renderCurrentPage();
-
-  try {
-    await loginWithGoogleAndFlask();
-    await syncAuthState();
-    authNotice = 'Logged in with Google successfully.';
-    navigateTo('scan');
-    authDraft = { email: '', password: '', confirmPassword: '' };
-  } catch (error) {
-    authError = error.message || 'Unable to continue with Google right now.';
-  } finally {
-    isAuthSubmitting = false;
-    renderCurrentPage();
-  }
-}
 async function handlePasswordReset() {
   const emailInput = document.getElementById('auth-email');
   const email = emailInput?.value?.trim() || '';
@@ -1066,6 +1351,8 @@ async function copyReport() {
 document.addEventListener('click', async (event) => {
   const navTarget = event.target.closest('[data-page]');
   if (navTarget && navTarget.closest('.tab-bar')) {
+    event.preventDefault();
+    event.stopPropagation();
     navigateTo(navTarget.dataset.page);
     return;
   }
@@ -1077,6 +1364,43 @@ document.addEventListener('click', async (event) => {
 
   if (event.target.closest('#refresh-mail-tab-btn')) {
     refreshActiveMailTab();
+    return;
+  }
+
+  const oauthLoginTarget = event.target.closest('[data-oauth-login-provider]');
+  if (oauthLoginTarget) {
+    const provider = oauthLoginTarget.dataset.oauthLoginProvider || 'google';
+    authError = '';
+    authNotice = `Opened ${getProviderLabel(provider)} OAuth. Backend success redirect must point to the URL shown here.`;
+    startMailboxOAuth(provider);
+    renderCurrentPage();
+    return;
+  }
+
+  const mailboxProviderTarget = event.target.closest('[data-mailbox-provider]');
+  if (mailboxProviderTarget) {
+    mailboxProvider = mailboxProviderTarget.dataset.mailboxProvider || 'google';
+    mailboxError = '';
+    renderCurrentPage();
+    return;
+  }
+
+  if (event.target.closest('#mailbox-connect-btn')) {
+    mailboxError = '';
+    startMailboxOAuth(mailboxProvider);
+    authNotice = `Opened ${getProviderLabel(mailboxProvider)} OAuth. If it does not return here, set backend success redirect to the URL shown in this panel.`;
+    renderCurrentPage();
+    return;
+  }
+
+  if (event.target.closest('#mailbox-load-btn')) {
+    loadMailboxForProvider(mailboxProvider);
+    return;
+  }
+
+  const mailboxMessage = event.target.closest('[data-mailbox-message-id]');
+  if (mailboxMessage) {
+    scanMailboxMessage(mailboxMessage.dataset.mailboxMessageId, mailboxProvider);
     return;
   }
 
@@ -1170,11 +1494,6 @@ document.addEventListener('click', async (event) => {
     return;
   }
 
-  if (event.target.closest('#auth-google-btn')) {
-    handleGoogleAuth();
-    return;
-  }
-
   if (event.target.closest('#auth-logout-btn')) {
     handleLogout();
   }
@@ -1248,12 +1567,23 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local' || !changes.tribunal_auth_session) {
+    return;
+  }
+
+  syncAuthState().then(() => {
+    authNotice = hasAuthSession() ? 'Mailbox connected successfully.' : authNotice;
+    renderCurrentPage();
+  });
+});
+
 async function init() {
   const settings = getSettings();
   await syncAuthState();
   applyTheme(settings.theme);
   saveWidgetPreferences({ enabled: settings.floatingPopupEnabled });
-  navigateTo('scan');
+  navigateTo(currentPage);
   injectIcons(document);
 }
 
