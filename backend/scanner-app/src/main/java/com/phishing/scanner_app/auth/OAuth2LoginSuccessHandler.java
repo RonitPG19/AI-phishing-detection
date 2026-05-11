@@ -6,6 +6,7 @@ import com.phishing.scanner_app.mail.StoredOAuthToken;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.HttpStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,6 +22,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -75,14 +78,15 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
         storeProviderToken(oauthToken, uid);
 
         String jwt = jwtUtil.generateToken(uid, DEFAULT_ROLE, tokenClaims);
-        String redirectUri = UriComponentsBuilder.fromUriString(successRedirectUri)
-                .queryParam("token", jwt)
-                .queryParam("tokenType", "Bearer")
-                .build()
-                .toUriString();
+        String redirectUri = successRedirectUri
+                + "#token=" + URLEncoder.encode(jwt, StandardCharsets.UTF_8)
+                + "&tokenType=Bearer";
+        String safeRedirectUri = redirectUri.replaceAll("(token=)[^&]+", "$1<redacted>");
 
         LOGGER.info("OAuth2 login succeeded for provider={} uid={}", registrationId, uid);
-        response.sendRedirect(redirectUri);
+        LOGGER.info("OAuth2 redirect target={}", safeRedirectUri);
+        response.setStatus(HttpStatus.FOUND.value());
+        response.setHeader("Location", redirectUri);
     }
 
     private void storeProviderToken(OAuth2AuthenticationToken oauthToken, String userId) {

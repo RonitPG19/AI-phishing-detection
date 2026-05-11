@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -60,11 +61,11 @@ public class FirestoreScanHistoryService {
             document.put("responseSource", responseSource);
             document.put("requestedAt", requestedAt.toString());
             document.put("deletedAt", null);
-            document.put("requestSummary", Map.of(
-                "sender", summary.sender(),
-                "subjectSnippet", summary.subjectSnippet(),
-                "urlCount", summary.urlCount()
-            ));
+            Map<String, Object> summaryDocument = new LinkedHashMap<>();
+            summaryDocument.put("sender", summary.sender());
+            summaryDocument.put("subjectSnippet", summary.subjectSnippet());
+            summaryDocument.put("urlCount", summary.urlCount());
+            document.put("requestSummary", summaryDocument);
             document.put("overallRiskScore", payload.overallRiskScore());
             document.put("sender", payload.sender());
             document.put("subject", payload.subject());
@@ -83,20 +84,20 @@ public class FirestoreScanHistoryService {
         int effectiveLimit = Math.clamp(limit, 1, maxPageSize);
 
         try {
-            Query query = firestore.collection(COLLECTION)
+            String cursorTimestamp = cursor == null || cursor.isBlank() ? null : decodeCursor(cursor);
+            List<QueryDocumentSnapshot> documents = firestore.collection(COLLECTION)
                 .whereEqualTo("userId", userId)
-                .whereEqualTo("deletedAt", null);
-
-            if (cursor != null && !cursor.isBlank()) {
-                query = query.whereLessThan("requestedAt", decodeCursor(cursor));
-            }
-
-            List<QueryDocumentSnapshot> documents = query
-                .orderBy("requestedAt", Query.Direction.DESCENDING)
-                .limit((int) (effectiveLimit + 1L))
                 .get()
                 .get()
-                .getDocuments();
+                .getDocuments()
+                .stream()
+                .filter(document -> document.getString("deletedAt") == null)
+                .filter(document -> cursorTimestamp == null || compareNullableTimestamps(document.getString("requestedAt"), cursorTimestamp) < 0)
+                .sorted(Comparator.comparing(
+                    (QueryDocumentSnapshot document) -> nullToEmpty(document.getString("requestedAt"))
+                ).reversed())
+                .limit((long) effectiveLimit + 1L)
+                .toList();
 
             List<HistoryItemResponse> items = new ArrayList<>();
             for (int index = 0; index < Math.min(documents.size(), effectiveLimit); index++) {
@@ -110,6 +111,8 @@ public class FirestoreScanHistoryService {
 
             return new CursorPageResponse<>(items, nextCursor);
         } catch (Exception exception) {
+            LOGGER.warn("Failed to read user scan history: {}", exception.getMessage());
+            LOGGER.debug("User scan history read error details", exception);
             throw new PersistenceUnavailableException("Unable to read scan history");
         }
     }
@@ -193,5 +196,13 @@ public class FirestoreScanHistoryService {
 
     private String decodeCursor(String cursor) {
         return new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
+    }
+
+    private int compareNullableTimestamps(String left, String right) {
+        return nullToEmpty(left).compareTo(nullToEmpty(right));
+    }
+
+    private String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 }
