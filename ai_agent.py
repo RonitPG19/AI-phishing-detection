@@ -7,6 +7,10 @@ import time
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import importlib.util
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # =================================================================
 # PRODUCTION LOGGING SETUP
