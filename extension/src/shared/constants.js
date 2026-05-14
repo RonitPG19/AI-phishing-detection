@@ -7,6 +7,7 @@ export const PROVIDERS = {
 export const RUNTIME_MESSAGES = {
   HEARTBEAT: 'heartbeat',
   PING_CONTENT: 'ping-content',
+  REQUEST_ACTIVE_EMAIL_PAYLOAD: 'request-active-email-payload',
   REQUEST_ACTIVE_SCAN: 'request-active-scan',
   SCAN_EMAIL: 'scan-email'
 };

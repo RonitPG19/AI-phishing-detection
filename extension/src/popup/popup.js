@@ -105,6 +105,25 @@ function isConnectionLostError(message = '') {
   return /receiving end does not exist|could not establish connection|extension context invalidated|connection was lost/i.test(String(message));
 }
 
+function normalizeMailboxError(error, provider = 'google') {
+  const message = String(error?.message || error || '');
+  const providerLabel = getProviderLabel(provider);
+
+  if (/status 403|forbidden|insufficient|permission|scope/i.test(message)) {
+    return `${providerLabel} API permission was denied. Log out, then use Continue with Gmail again so Google grants gmail.readonly access. Also confirm Gmail API is enabled in Google Cloud.`;
+  }
+
+  if (/status 401|unauthorized/i.test(message)) {
+    return `The Spring backend did not accept this session. Log out, then use Continue with Gmail so the extension stores the backend OAuth JWT.`;
+  }
+
+  if (/not connected|missing|refresh token|reconnect/i.test(message)) {
+    return `Use Continue with Gmail again to refresh the backend OAuth token for ${providerLabel} API access.`;
+  }
+
+  return message;
+}
+
 async function wakeBackgroundServiceWorker() {
   const retries = 3;
   for (let attempt = 1; attempt <= retries; attempt += 1) {
@@ -236,10 +255,25 @@ function getResultSourceLabel(result) {
   }
 
   if (source === 'api') {
-    return 'API Response';
+    return 'Backend API';
   }
 
   return 'Unknown Source';
+}
+
+function getExtractionSourceLabel(result) {
+  const source = String(result?.extractionSource || '').toLowerCase();
+  const provider = String(result?.extractionProvider || '').toLowerCase();
+
+  if (source === 'provider-api') {
+    return provider === 'google' || provider === 'gmail' ? 'Gmail API' : 'Mailbox API';
+  }
+
+  if (source === 'dom') {
+    return 'Current tab DOM';
+  }
+
+  return 'Unknown';
 }
 
 function normalizeSeverity(value = '') {
@@ -683,7 +717,8 @@ function renderResultView(result) {
     <div class="results-summary">
       <div class="results-threat-label">${escapeHtml(String(result.overallThreat || 'safe').toUpperCase())} RISK</div>
       <div class="results-issue-count">${issueCount} issue${issueCount === 1 ? '' : 's'} found</div>
-      <div class="results-source">Source: ${escapeHtml(getResultSourceLabel(result))}</div>
+      <div class="results-source">Analysis: ${escapeHtml(getResultSourceLabel(result))}</div>
+      <div class="results-source">Extraction: ${escapeHtml(getExtractionSourceLabel(result))}</div>
     </div>
     <div class="section-group">${Object.entries(result.sections || {}).map(([key, section]) => renderSection(key, section)).join('')}</div>
     <div class="results-actions">
@@ -705,29 +740,18 @@ function renderMailboxPanel() {
     <div class="mailbox-panel">
       <div class="mailbox-panel-head">
         <div>
-          <div class="mailbox-title">Mailbox API</div>
-          <div class="mailbox-copy">Optional OAuth path for recent mail and attachments.</div>
+          <div class="mailbox-title">Gmail API Extraction</div>
+          <div class="mailbox-copy">Continue with Gmail signs you in and grants backend Gmail API read access. No separate connection is needed.</div>
         </div>
-        <span class="badge badge-${isMailboxConnected(mailboxProvider) ? 'safe' : 'low'}">
-          ${isMailboxConnected(mailboxProvider) ? 'connected' : 'optional'}
+        <span class="badge badge-${isMailboxConnected(mailboxProvider) ? 'safe' : 'medium'}">
+          ${isMailboxConnected(mailboxProvider) ? 'ready' : 're-login if blocked'}
         </span>
-      </div>
-
-      <div class="mailbox-provider-tabs" role="tablist" aria-label="Mailbox provider">
-        ${['google', 'outlook'].map((provider) => `
-          <button class="mailbox-provider-tab ${mailboxProvider === provider ? 'active' : ''}" data-mailbox-provider="${provider}" type="button">
-            ${escapeHtml(getProviderLabel(provider))}
-          </button>
-        `).join('')}
       </div>
 
       ${authNotice ? `<div class="auth-message auth-message-success">${escapeHtml(authNotice)}</div>` : ''}
       ${mailboxError ? `<div class="auth-message auth-message-error">${escapeHtml(mailboxError)}</div>` : ''}
 
       <div class="mailbox-actions">
-        <button class="btn-secondary" id="mailbox-connect-btn" type="button">
-          <i data-icon="link"></i> Connect
-        </button>
         <button class="btn-secondary" id="mailbox-load-btn" type="button" ${mailboxLoading ? 'disabled' : ''}>
           <i data-icon="mail"></i> ${mailboxLoading ? 'Loading...' : 'Recent Mail'}
         </button>
@@ -785,7 +809,7 @@ function renderScanPage() {
     <div class="page-enter">
       <div class="scan-hero scan-hero-primary">
         <i data-icon="shield" class="scan-hero-icon"></i>
-        <p class="scan-empty-text">Open Gmail or Outlook in the active tab, then scan the current email.</p>
+        <p class="scan-empty-text">Open a Gmail or Outlook message, then scan the current email.</p>
         <div class="scan-btn-wrap">
           <button class="btn-primary" id="scan-btn" ${!settings.enabled ? 'disabled' : ''}><i data-icon="scan-search"></i> Scan Current Tab</button>
           ${!settings.enabled ? '<p class="scan-disabled-hint">Enable extension in Settings</p>' : ''}
@@ -814,7 +838,7 @@ async function renderHistoryPage() {
       result = await ensureHistoryDetailLoaded(historyDetailIndex, history);
     }
     const issueCount = getIssueCount(result);
-    container.innerHTML = `<div class="page-enter"><button class="back-btn" id="history-back-btn"><i data-icon="arrow-left"></i> Back to History</button><div class="results-summary"><div class="results-threat-label">${escapeHtml(String(result.overallThreat || 'safe').toUpperCase())} RISK</div><div class="results-issue-count">${issueCount} issue${issueCount === 1 ? '' : 's'} found</div><div class="results-source">Source: ${escapeHtml(getResultSourceLabel(result))}</div><p style="margin-top:4px;font-size:12px;color:var(--text-muted)">${escapeHtml(formatTimestamp(result.timestamp))} - ${escapeHtml(truncate(result.emailSubject || 'Current message', 52))}</p></div><div class="section-group">${Object.entries(result.sections || {}).map(([key, section]) => renderSection(key, section)).join('')}</div></div>`;
+    container.innerHTML = `<div class="page-enter"><button class="back-btn" id="history-back-btn"><i data-icon="arrow-left"></i> Back to History</button><div class="results-summary"><div class="results-threat-label">${escapeHtml(String(result.overallThreat || 'safe').toUpperCase())} RISK</div><div class="results-issue-count">${issueCount} issue${issueCount === 1 ? '' : 's'} found</div><div class="results-source">Analysis: ${escapeHtml(getResultSourceLabel(result))}</div><div class="results-source">Extraction: ${escapeHtml(getExtractionSourceLabel(result))}</div><p style="margin-top:4px;font-size:12px;color:var(--text-muted)">${escapeHtml(formatTimestamp(result.timestamp))} - ${escapeHtml(truncate(result.emailSubject || 'Current message', 52))}</p></div><div class="section-group">${Object.entries(result.sections || {}).map(([key, section]) => renderSection(key, section)).join('')}</div></div>`;
     injectIcons(container);
     return;
   }
@@ -1068,6 +1092,71 @@ async function requestActiveScan() {
   throw new Error('Mail tab connection was lost. Please refresh the mail tab and try again.');
 }
 
+async function requestActiveEmailPayload() {
+  await wakeBackgroundServiceWorker();
+
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+  if (!tab?.id) {
+    throw new Error('No active tab available. Open Gmail or Outlook and try again.');
+  }
+
+  const tabUrl = tab.url || '';
+  const supported = SUPPORTED_MAIL_HOSTS.some((host) => tabUrl.startsWith(`https://${host}/`));
+  if (!supported) {
+    throw new Error('Open Gmail or Outlook in the active tab, then run the scan again.');
+  }
+
+  const receiverReady = await ensureTabContentReceiver(tab.id, tabUrl);
+  if (!receiverReady) {
+    throw new Error('Mail page is not ready yet. Refresh the Gmail/Outlook tab once, then try again.');
+  }
+
+  const maxAttempts = 5;
+  const retryDelayMs = 450;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const result = await new Promise((resolve) => {
+      chrome.tabs.sendMessage(tab.id, { type: RUNTIME_MESSAGES.REQUEST_ACTIVE_EMAIL_PAYLOAD }, (response) => {
+        const runtimeError = chrome.runtime.lastError?.message || '';
+        if (runtimeError) {
+          resolve({ ok: false, runtimeError });
+          return;
+        }
+        resolve({ ok: true, response });
+      });
+    });
+
+    if (!result.ok) {
+      const isNoReceiver = /Receiving end does not exist/i.test(result.runtimeError);
+      if (isNoReceiver && attempt < maxAttempts) {
+        await new Promise((resolve) => window.setTimeout(resolve, retryDelayMs));
+        continue;
+      }
+      throw new Error('Mail tab connection was lost. Refresh the mail tab once, then try scan again.');
+    }
+
+    if (!result.response) {
+      if (attempt < maxAttempts) {
+        await new Promise((resolve) => window.setTimeout(resolve, retryDelayMs));
+        continue;
+      }
+      throw new Error('No email payload was returned from the active tab.');
+    }
+
+    if (result.response.ok === false) {
+      throw new Error(result.response.error || 'The current message could not be read.');
+    }
+
+    return {
+      provider: result.response.provider || getProviderFromTabUrl(tabUrl),
+      payload: result.response.payload
+    };
+  }
+
+  throw new Error('Mail tab connection was lost. Please refresh the mail tab and try again.');
+}
+
 async function requestBackgroundScan(payload) {
   return new Promise((resolve, reject) => {
     chrome.runtime.sendMessage({ type: RUNTIME_MESSAGES.SCAN_EMAIL, payload }, (response) => {
@@ -1092,6 +1181,71 @@ async function requestBackgroundScan(payload) {
   });
 }
 
+function quoteGmailSearchValue(value = '') {
+  return `"${String(value || '').replace(/["\\]/g, ' ').trim()}"`;
+}
+
+function buildGmailSearchQuery(payload = {}) {
+  const metadata = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {};
+  const from = String(payload.from || metadata.senderNormalized || '').trim();
+  const subject = String(payload.subject || '').trim();
+  const parts = [];
+
+  if (from) {
+    parts.push(`from:${from}`);
+  }
+
+  if (subject) {
+    parts.push(`subject:${quoteGmailSearchValue(subject)}`);
+  }
+
+  return parts.join(' ');
+}
+
+async function requestGmailApiScanForPayload(payload = {}) {
+  const query = buildGmailSearchQuery(payload);
+  if (!query) {
+    throw new Error('Current Gmail message does not have enough details for Gmail API lookup.');
+  }
+
+  mailboxProvider = 'google';
+  mailboxConnections = await fetchMailboxConnections().catch(() => []);
+
+  const messages = await listMailboxMessages('google', 10, query);
+  mailboxMessages = [
+    ...mailboxMessages.filter((message) => message.provider !== 'google'),
+    ...messages.map((message) => ({ ...message, provider: 'google' }))
+  ];
+
+  if (!messages.length) {
+    throw new Error('Could not find the currently opened Gmail message through Gmail API.');
+  }
+
+  const mail = await getMailboxMessage('google', messages[0].id);
+  const apiPayload = mailboxMessageToScanPayload(mail, 'google');
+  return requestBackgroundScan(apiPayload);
+}
+
+async function requestLatestMailboxScan(provider = 'google') {
+  mailboxProvider = provider;
+  mailboxConnections = await fetchMailboxConnections().catch(() => []);
+
+  const messages = await listMailboxMessages(provider, 10);
+  mailboxMessages = [
+    ...mailboxMessages.filter((message) => message.provider !== provider),
+    ...messages.map((message) => ({ ...message, provider }))
+  ];
+
+  if (!messages.length) {
+    throw new Error(`No recent ${getProviderLabel(provider)} messages found through the mailbox API.`);
+  }
+
+  const latestMessage = messages[0];
+  const mail = await getMailboxMessage(provider, latestMessage.id);
+  const payload = mailboxMessageToScanPayload(mail, provider);
+  return requestBackgroundScan(payload);
+}
+
 async function loadMailboxForProvider(provider = mailboxProvider) {
   mailboxProvider = provider;
   mailboxLoading = true;
@@ -1106,7 +1260,7 @@ async function loadMailboxForProvider(provider = mailboxProvider) {
       ...messages.map((message) => ({ ...message, provider }))
     ];
   } catch (error) {
-    mailboxError = error.message || `Could not load ${getProviderLabel(provider)} messages.`;
+    mailboxError = normalizeMailboxError(error, provider) || `Could not load ${getProviderLabel(provider)} messages.`;
   } finally {
     mailboxLoading = false;
     renderCurrentPage();
@@ -1137,7 +1291,7 @@ async function scanMailboxMessage(messageId, provider = mailboxProvider) {
     await advanceScanStage(3, 180, currentScanVersion);
     scanResults = result;
   } catch (error) {
-    scanError = error.message || 'Unable to scan the selected mailbox message.';
+    scanError = normalizeMailboxError(error, provider) || 'Unable to scan the selected mailbox message.';
     scanRequiresRefresh = false;
   } finally {
     isScanning = false;
@@ -1166,12 +1320,26 @@ async function startScan() {
 
   try {
     await advanceScanStage(0, 250, currentScanVersion);
-    const result = await requestActiveScan();
+    const activeEmail = await requestActiveEmailPayload();
+    await advanceScanStage(1, 200, currentScanVersion);
+
+    let result;
+    if ((activeEmail.provider || '').toLowerCase() === 'gmail') {
+      try {
+        result = await requestGmailApiScanForPayload(activeEmail.payload);
+      } catch (gmailApiError) {
+        console.warn('[Tribunal] Gmail API extraction failed; falling back to current-tab DOM scan.', gmailApiError);
+        result = await requestBackgroundScan(activeEmail.payload);
+      }
+    } else {
+      result = await requestBackgroundScan(activeEmail.payload);
+    }
+
     await advanceScanStage(2, 350, currentScanVersion);
     await advanceScanStage(3, 250, currentScanVersion);
     scanResults = result;
   } catch (error) {
-    scanError = error.message || 'Unable to scan the current message.';
+    scanError = normalizeMailboxError(error, 'google') || 'Unable to scan the current message.';
     scanRequiresRefresh = isConnectionLostError(scanError);
   } finally {
     isScanning = false;
@@ -1371,24 +1539,8 @@ document.addEventListener('click', async (event) => {
   if (oauthLoginTarget) {
     const provider = oauthLoginTarget.dataset.oauthLoginProvider || 'google';
     authError = '';
-    authNotice = `Opened ${getProviderLabel(provider)} OAuth. Backend success redirect must point to the URL shown here.`;
+    authNotice = `Opened ${getProviderLabel(provider)} OAuth. This signs you in and grants Gmail API access for scans.`;
     startMailboxOAuth(provider);
-    renderCurrentPage();
-    return;
-  }
-
-  const mailboxProviderTarget = event.target.closest('[data-mailbox-provider]');
-  if (mailboxProviderTarget) {
-    mailboxProvider = mailboxProviderTarget.dataset.mailboxProvider || 'google';
-    mailboxError = '';
-    renderCurrentPage();
-    return;
-  }
-
-  if (event.target.closest('#mailbox-connect-btn')) {
-    mailboxError = '';
-    startMailboxOAuth(mailboxProvider);
-    authNotice = `Opened ${getProviderLabel(mailboxProvider)} OAuth. If it does not return here, set backend success redirect to the URL shown in this panel.`;
     renderCurrentPage();
     return;
   }

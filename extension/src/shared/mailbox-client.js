@@ -98,11 +98,14 @@ export async function fetchMailboxConnections() {
   return Array.isArray(connections) ? connections : [];
 }
 
-export async function listMailboxMessages(provider, limit = 10) {
+export async function listMailboxMessages(provider, limit = 10, query = '') {
   const params = new URLSearchParams({
     provider,
     limit: String(limit)
   });
+  if (query) {
+    params.set('query', query);
+  }
 
   const messages = await requestSpringApi(`/api/mail/messages?${params.toString()}`);
   return Array.isArray(messages) ? messages : [];
@@ -115,8 +118,6 @@ export async function getMailboxMessage(provider, messageId) {
 
 export function mailboxMessageToScanPayload(mail = {}, provider = '') {
   const normalizedProvider = String(provider || '').trim().toLowerCase() === 'gmail' ? 'google' : String(provider || '').trim().toLowerCase();
-
-  console.log({mail});
 
   return {
     provider: normalizedProvider || 'google',

@@ -173,9 +173,15 @@ function mapApiResultToExtensionShape(apiResult = {}, originalPayload = {}) {
   const sections = normalizeApiSections(apiResult.sections, apiResult.headerInspectionResult, apiResult.findings);
   const issueCount = Object.values(sections).reduce((count, section) => count + (section.issues?.length || 0), 0);
   const aiSummary = String(apiResult?.aiAnalysis?.summary || '').trim();
+  const metadata = originalPayload.metadata && typeof originalPayload.metadata === 'object'
+    ? originalPayload.metadata
+    : {};
 
   return {
     source: 'api',
+    extractionSource: metadata.source || 'dom',
+    extractionProvider: metadata.provider || originalPayload.provider || '',
+    messageId: metadata.messageId || '',
     status: 'completed',
     overallThreat: riskLabelFromScore(overallRiskScore),
     overallRiskScore,

@@ -132,6 +132,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  if (message?.type === RUNTIME_MESSAGES.REQUEST_ACTIVE_EMAIL_PAYLOAD) {
+    try {
+      const payload = buildNormalizedGmailPayload();
+      if (!payload) {
+        sendResponse({ ok: false, error: 'Could not read the currently opened Gmail message.' });
+        return false;
+      }
+      sendResponse({ ok: true, provider: PROVIDERS.GMAIL, payload });
+    } catch (error) {
+      sendResponse({ ok: false, error: error.message || 'Could not read the currently opened Gmail message.' });
+    }
+    return false;
+  }
+
   if (message?.type !== RUNTIME_MESSAGES.REQUEST_ACTIVE_SCAN) {
     return false;
   }
