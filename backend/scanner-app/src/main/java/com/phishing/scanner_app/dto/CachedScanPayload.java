@@ -12,7 +12,8 @@ public record CachedScanPayload(
     int overallRiskScore,
     String reportId,
     GeminiEmailAnalyzer.GeminiAnalysisResult aiAnalysis,
-    String scannedAt
+    String scannedAt,
+    java.util.List<AttachmentScanResponse> attachments
 ) {
     public ScanResponse toScanResponse(boolean cacheHit, String cacheExpiresAt, String historyId) {
         return new ScanResponse(
@@ -27,7 +28,8 @@ public record CachedScanPayload(
             cacheHit,
             scannedAt,
             cacheExpiresAt,
-            historyId
+            historyId,
+            attachments
         );
     }
 }

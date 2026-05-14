@@ -9,6 +9,7 @@ import com.phishing.scanner_app.model.HeaderInspectionResult;
 import com.phishing.scanner_app.model.RiskFinding;
 import com.phishing.scanner_app.model.RiskScoreResult;
 import com.phishing.scanner_app.model.Severity;
+import com.phishing.scanner_app.dto.AttachmentScanResponse;
 import com.phishing.scanner_app.util.RedirectChainResolver;
 import com.phishing.scanner_app.util.WhitelistManager;
 
@@ -110,7 +111,7 @@ public class PhishingScannerService {
         this.trustedDomains = loadTrustedDomains();
     }
 
-    public EmailScanReport scanEmail(EmailRequest request, String safeBrowsingApiKey) {
+    public EmailScanReport scanEmail(EmailRequest request, String safeBrowsingApiKey, List<AttachmentScanResponse> attachments) {
         String traceId = "email-" + Long.toHexString(System.nanoTime());
         long scanStartNs = System.nanoTime();
         String subject = defaultString(request.getSubject(), "(no subject)");
@@ -245,8 +246,22 @@ public class PhishingScannerService {
             logger.info("scan={} stage=gemini durationMs={} bodyPresent={}", traceId, 0, false);
         }
 
-        // ── Risk scoring ──
         RiskScoreResult riskScoreResult;
+        boolean hasMaliciousAttachment = false;
+
+        if (attachments != null) {
+            for (AttachmentScanResponse attachment : attachments) {
+                if ("Malicious".equalsIgnoreCase(attachment.verdict())) {
+                    hasMaliciousAttachment = true;
+                    findings.add(new RiskFinding(
+                        "Attachment: " + attachment.filename(),
+                        "Malicious attachment detected: " + attachment.technicalReason(),
+                        Severity.HIGH
+                    ));
+                }
+            }
+        }
+
         if (hasBody) {
             String senderRootDomain = extractRootDomain(extractFromDomain(sender));
             boolean senderWhitelisted = whitelistManager.isWhitelistedDomain(senderRootDomain);
@@ -256,13 +271,20 @@ public class PhishingScannerService {
             riskScoreResult = calculateLinkOnlyRiskScore(findings);
         }
 
+        if (hasMaliciousAttachment) {
+            // Override risk score to max if a malicious attachment is found
+            Map<String, Integer> newBreakdown = new LinkedHashMap<>(riskScoreResult.scoreBreakdown());
+            newBreakdown.put("maliciousAttachment", 100);
+            riskScoreResult = new RiskScoreResult(100, newBreakdown);
+        }
+
         CategorizedFindings categorized = categorizeResults(findings, riskScoreResult.scoreBreakdown());
 
         long totalMs = elapsedMillis(scanStartNs);
         logger.info("scan={} stage=total durationMs={} urls={} findings={} whoisMs={} sslMs={} redirectMs={} safeBrowsingMs={} geminiMs={}",
             traceId, totalMs, allUrls.size(), findings.size(), whoisMs, sslMs, redirectMs, safeBrowsingMs, geminiMs);
 
-        return new EmailScanReport(subject, sender, allUrls.size(), categorized, headerInspectionResult, riskScoreResult.overallScore(), null, aiAnalysis);
+        return new EmailScanReport(subject, sender, allUrls.size(), categorized, headerInspectionResult, riskScoreResult.overallScore(), null, aiAnalysis, attachments);
     }
 
     /**

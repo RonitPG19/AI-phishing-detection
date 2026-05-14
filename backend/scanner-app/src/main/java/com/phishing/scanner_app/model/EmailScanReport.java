@@ -1,6 +1,7 @@
 package com.phishing.scanner_app.model;
 
 import com.phishing.scanner_app.service.GeminiEmailAnalyzer;
+import com.phishing.scanner_app.dto.AttachmentScanResponse;
 
 public record EmailScanReport(
     String subject,
@@ -10,6 +11,7 @@ public record EmailScanReport(
     HeaderInspectionResult headerInspectionResult,
     int overallRiskScore,
     String reportId,
-    GeminiEmailAnalyzer.GeminiAnalysisResult aiAnalysis
+    GeminiEmailAnalyzer.GeminiAnalysisResult aiAnalysis,
+    java.util.List<AttachmentScanResponse> attachments
 ) {
 }

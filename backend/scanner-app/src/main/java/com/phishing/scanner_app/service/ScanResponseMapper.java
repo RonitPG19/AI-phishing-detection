@@ -27,7 +27,8 @@ public class ScanResponseMapper {
             report.overallRiskScore(),
             reportId,
             report.aiAnalysis(),
-            scannedAt
+            scannedAt,
+            report.attachments()
         );
     }
 

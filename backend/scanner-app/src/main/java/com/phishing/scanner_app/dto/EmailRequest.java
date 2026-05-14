@@ -22,6 +22,13 @@ public class EmailRequest {
 
     private Map<String, List<String>> headers;
 
+    @Size(max = 500, message = "Query must not exceed 500 characters")
+    private String query;
+
+    private String messageId;
+
+    private String provider = "google";
+
     /**
      * Extracted links from the email, each with href and display text.
      * When bodyHtml/bodyText are absent, these links are scanned directly.
@@ -103,5 +110,29 @@ public class EmailRequest {
 
     public void setLinks(List<LinkItem> links) {
         this.links = links;
+    }
+
+    public String getQuery() {
+        return query;
+    }
+
+    public void setQuery(String query) {
+        this.query = query;
+    }
+
+    public String getMessageId() {
+        return messageId;
+    }
+
+    public void setMessageId(String messageId) {
+        this.messageId = messageId;
+    }
+
+    public String getProvider() {
+        return provider;
+    }
+
+    public void setProvider(String provider) {
+        this.provider = provider;
     }
 }

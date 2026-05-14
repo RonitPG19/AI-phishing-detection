@@ -15,6 +15,7 @@ public record ScanResponse(
     boolean cacheHit,
     String scannedAt,
     String cacheExpiresAt,
-    String historyId
+    String historyId,
+    java.util.List<AttachmentScanResponse> attachments
 ) {
 }
