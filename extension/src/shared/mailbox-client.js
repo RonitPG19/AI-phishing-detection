@@ -114,8 +114,12 @@ export async function getMailboxMessage(provider, messageId) {
 }
 
 export function mailboxMessageToScanPayload(mail = {}, provider = '') {
+  const normalizedProvider = String(provider || '').trim().toLowerCase() === 'gmail' ? 'google' : String(provider || '').trim().toLowerCase();
+
+  console.log({mail});
+
   return {
-    provider: provider === 'google' ? 'gmail' : provider,
+    provider: normalizedProvider || 'google',
     subject: mail.subject || '',
     from: mail.from || '',
     to: mail.to ? [mail.to] : [],
@@ -131,7 +135,7 @@ export function mailboxMessageToScanPayload(mail = {}, provider = '') {
     },
     metadata: {
       source: 'provider-api',
-      provider,
+      provider: normalizedProvider || 'google',
       messageId: mail.id || '',
       threadId: mail.threadId || '',
       hasAttachments: Array.isArray(mail.attachments) && mail.attachments.length > 0,

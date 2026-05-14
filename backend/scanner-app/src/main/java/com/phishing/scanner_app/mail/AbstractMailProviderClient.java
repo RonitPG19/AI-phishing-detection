@@ -36,7 +36,7 @@ abstract class AbstractMailProviderClient implements MailProviderClient {
         try {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new MailIntegrationException(provider() + " API request failed with status " + response.statusCode());
+                throw new MailIntegrationException(provider() + " API request failed with status " + response.statusCode() + " and body: " + response.body());
             }
             return objectMapper.readTree(response.body());
         } catch (IOException exception) {

@@ -14,5 +14,5 @@ interface MailProviderClient {
 
     MailMessageResponse getMessage(String userId, String messageId);
 
-    MailAttachmentContent getAttachment(String userId, String messageId, String attachmentId);
+    MailAttachmentContent getAttachment(String userId, String messageId, String attachmentId, String filename, String mimeType);
 }

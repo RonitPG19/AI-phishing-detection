@@ -73,7 +73,7 @@ public class OutlookProviderClient extends AbstractMailProviderClient {
     }
 
     @Override
-    public MailAttachmentContent getAttachment(String userId, String messageId, String attachmentId) {
+    public MailAttachmentContent getAttachment(String userId, String messageId, String attachmentId, String filename, String mimeType) {
         JsonNode attachment = getJson(userId, GRAPH_API + "/messages/" + encodeQueryValue(messageId)
             + "/attachments/" + encodeQueryValue(attachmentId));
         String content = attachment.path("contentBytes").asText(null);
@@ -82,8 +82,8 @@ public class OutlookProviderClient extends AbstractMailProviderClient {
         }
 
         return new MailAttachmentContent(
-            attachment.path("name").asText("attachment"),
-            attachment.path("contentType").asText("application/octet-stream"),
+            attachment.path("name").asText(filename != null ? filename : "attachment"),
+            attachment.path("contentType").asText(mimeType != null ? mimeType : "application/octet-stream"),
             decodeBase64(content)
         );
     }

@@ -41,8 +41,8 @@ public class MailboxService {
         return client(provider).getMessage(userId, messageId);
     }
 
-    public MailAttachmentContent getAttachment(String userId, String provider, String messageId, String attachmentId) {
-        return client(provider).getAttachment(userId, messageId, attachmentId);
+    public MailAttachmentContent getAttachment(String userId, String provider, String messageId, String attachmentId, String filename, String mimeType) {
+        return client(provider).getAttachment(userId, messageId, attachmentId, filename, mimeType);
     }
 
     public void disconnect(String userId, String provider) {

@@ -65,17 +65,12 @@ public class GmailProviderClient extends AbstractMailProviderClient {
     }
 
     @Override
-    public MailAttachmentContent getAttachment(String userId, String messageId, String attachmentId) {
-        MailAttachmentResponse metadata = getMessage(userId, messageId).attachments().stream()
-            .filter(attachment -> attachment.id().equals(attachmentId))
-            .findFirst()
-            .orElseThrow(() -> new ResourceNotFoundException("Attachment not found"));
-
+    public MailAttachmentContent getAttachment(String userId, String messageId, String attachmentId, String filename, String mimeType) {
         JsonNode response = getJson(userId, GMAIL_API + "/messages/" + encodeQueryValue(messageId)
             + "/attachments/" + encodeQueryValue(attachmentId));
         return new MailAttachmentContent(
-            metadata.filename(),
-            metadata.mimeType(),
+            filename,
+            mimeType,
             decodeBase64Url(response.path("data").asText())
         );
     }

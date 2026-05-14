@@ -34,13 +34,35 @@ function extractEmailAddress(value = '') {
   return match ? match[0].toLowerCase() : '';
 }
 
+function normalizeLinks(links = []) {
+  if (!Array.isArray(links)) {
+    return [];
+  }
+
+  return links
+    .map((item) => ({
+      href: String(item?.href || '').trim(),
+      text: String(item?.text || '').trim()
+    }))
+    .filter((item) => item.href);
+}
+
 function buildApiPayload(payload = {}) {
+  const metadata = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {};
+  const providerRaw = String(metadata.provider || payload.provider || '').trim().toLowerCase();
+  const provider = providerRaw === 'gmail' ? 'google' : providerRaw;
+  const resolvedMessageId = String(metadata.messageId || payload.messageId || metadata.threadId || '').trim();
+
   return {
     subject: payload.subject || '',
     from: extractEmailAddress(payload.from),
     bodyHtml: payload.bodyHtml || '',
     bodyText: payload.bodyText || '',
-    headers: normalizeHeaders(payload.headers)
+    headers: normalizeHeaders(payload.headers),
+    links: normalizeLinks(payload.links),
+    provider: provider || 'google',
+    messageId: resolvedMessageId,
+    query: String(payload.query || '').trim()
   };
 }
 

@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Locale;
 
 import com.phishing.scanner_app.mail.MailboxService;
 import com.phishing.scanner_app.dto.MailMessageResponse;
@@ -104,7 +105,25 @@ public class ScanOrchestrationService {
 
         if (request.getMessageId() != null && !request.getMessageId().isBlank()) {
             try {
-                MailMessageResponse mailMsg = mailboxService.getMessage(userId, request.getProvider(), request.getMessageId());
+                MailMessageResponse mailMsg;
+                if (shouldResolveMessageIdFirst(request)) {
+                    String resolvedMessageId = resolveMailboxMessageId(userId, request);
+                    if (resolvedMessageId != null && !resolvedMessageId.isBlank()) {
+                        logger.info("Pre-resolved mailbox messageId from {} to {}", request.getMessageId(), resolvedMessageId);
+                        request.setMessageId(resolvedMessageId);
+                    }
+                }
+                try {
+                    mailMsg = mailboxService.getMessage(userId, request.getProvider(), request.getMessageId());
+                } catch (Exception primaryLookupFailure) {
+                    String resolvedMessageId = resolveMailboxMessageId(userId, request);
+                    if (resolvedMessageId == null) {
+                        throw primaryLookupFailure;
+                    }
+                    logger.info("Resolved mailbox messageId from {} to {}", request.getMessageId(), resolvedMessageId);
+                    request.setMessageId(resolvedMessageId);
+                    mailMsg = mailboxService.getMessage(userId, request.getProvider(), resolvedMessageId);
+                }
                 if (!request.hasBodyContent()) {
                     request.setSubject(mailMsg.subject());
                     request.setFrom(mailMsg.from());
@@ -114,7 +133,7 @@ public class ScanOrchestrationService {
                 
                 if (mailMsg.attachments() != null) {
                     for (MailAttachmentResponse att : mailMsg.attachments()) {
-                        MailAttachmentContent content = mailboxService.getAttachment(userId, request.getProvider(), request.getMessageId(), att.id());
+                        MailAttachmentContent content = mailboxService.getAttachment(userId, request.getProvider(), request.getMessageId(), att.id(), att.filename(), att.mimeType());
                         AttachmentScanResponse attRes = attachmentScannerService.scanAttachment(content.content(), content.filename(), content.mimeType());
                         attachmentResults.add(attRes);
                     }
@@ -144,5 +163,85 @@ public class ScanOrchestrationService {
 
         String historyId = historyService.saveHistory(userId, reportId, cacheKey, "fresh_scan", payload, now);
         return payload.toScanResponse(false, cacheExpiresAt, historyId);
+    }
+
+    private String resolveMailboxMessageId(String userId, EmailRequest request) {
+        try {
+            List<MailSummaryResponse> summaries = mailboxService.listMessages(
+                userId,
+                request.getProvider(),
+                10,
+                buildResolutionQuery(request)
+            );
+
+            if (summaries.isEmpty()) {
+                return null;
+            }
+
+            String requestedId = normalize(request.getMessageId());
+            String requestedFrom = normalize(request.getFrom());
+            String requestedSubject = normalize(request.getSubject());
+
+            for (MailSummaryResponse summary : summaries) {
+                if (requestedId.equals(normalize(summary.id())) || requestedId.equals(normalize(summary.threadId()))) {
+                    return summary.id();
+                }
+            }
+
+            for (MailSummaryResponse summary : summaries) {
+                boolean subjectMatches = !requestedSubject.isBlank() && requestedSubject.equals(normalize(summary.subject()));
+                boolean fromMatches = !requestedFrom.isBlank() && requestedFrom.equals(normalize(summary.from()));
+                if (subjectMatches || fromMatches) {
+                    return summary.id();
+                }
+            }
+
+            return summaries.get(0).id();
+        } catch (Exception resolutionError) {
+            logger.warn("Failed to resolve mailbox messageId for provider={} originalMessageId={}",
+                request.getProvider(), request.getMessageId(), resolutionError);
+            return null;
+        }
+    }
+
+    private String buildResolutionQuery(EmailRequest request) {
+        if (request.getQuery() != null && !request.getQuery().isBlank()) {
+            return request.getQuery();
+        }
+
+        String subject = request.getSubject() == null ? "" : request.getSubject().trim();
+        String from = request.getFrom() == null ? "" : request.getFrom().trim();
+
+        if (!subject.isBlank() && !from.isBlank()) {
+            return "from:(" + from + ") subject:(" + subject + ")";
+        }
+        if (!from.isBlank()) {
+            return "from:(" + from + ")";
+        }
+        if (!subject.isBlank()) {
+            return "subject:(" + subject + ")";
+        }
+        return "";
+    }
+
+    private String normalize(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private boolean shouldResolveMessageIdFirst(EmailRequest request) {
+        String provider = normalize(request.getProvider());
+        String messageId = request.getMessageId() == null ? "" : request.getMessageId().trim();
+        String query = request.getQuery() == null ? "" : request.getQuery().trim();
+
+        if (!query.isBlank()) {
+            return true;
+        }
+
+        // Gmail UI/thread tokens (for example FMfc...) are not Gmail API message IDs.
+        if ("google".equals(provider)) {
+            return messageId.startsWith("FMfc");
+        }
+
+        return false;
     }
 }

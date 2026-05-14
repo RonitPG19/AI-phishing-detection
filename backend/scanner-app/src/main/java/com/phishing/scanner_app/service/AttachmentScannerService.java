@@ -71,53 +71,80 @@ public class AttachmentScannerService {
         // 3. Python AI Scan
         Path tempDir = null;
         try {
-            tempDir = Files.createTempDirectory("attachment_scan_" + UUID.randomUUID().toString());
+            tempDir = Files.createTempDirectory("attachment_scan_" + UUID.randomUUID());
             Path filePath = tempDir.resolve(filename);
             Files.write(filePath, content);
 
             ProcessBuilder pb = new ProcessBuilder(pythonPath, scriptPath, tempDir.toString());
+            logger.info("Python path: {}", pythonPath);
+            logger.info("Script path: {}", scriptPath);
+            logger.info("Script exists: {}", Files.exists(Path.of(scriptPath)));
             if (groqApiKey != null && !groqApiKey.isBlank()) {
                 pb.environment().put("GROQ_API_KEY", groqApiKey);
             }
+            Path logPath = tempDir.resolve("process.log");
+            pb.redirectOutput(logPath.toFile());
             pb.redirectErrorStream(true); // Combine stderr and stdout
 
             logger.info("Running Python attachment scanner for {}", filename);
             Process process = pb.start();
+            
             boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+
+            String processOutput = "";
+            if (Files.exists(logPath)) {
+                processOutput = Files.readString(logPath);
+            }
 
             if (!finished) {
                 process.destroyForcibly();
-                logger.warn("Python scanner timed out after {} seconds for {}", timeoutSeconds, filename);
+                logger.warn("Python scanner timed out after {} seconds for {}. Output: {}", timeoutSeconds, filename, processOutput);
                 return new AttachmentScanResponse(
                     filename, declaredMimeType, detectedMimeType, "Unknown",
                     "Scan timed out", "Timeout", new ArrayList<>()
                 );
             }
+//            logger.info("Process output:\n{}", processOutput);
+//            logger.info("Exit code: {}", process.exitValue());
+            // Add this check!
+            int exitValue = process.exitValue();
+            if (exitValue != 0) {
+                logger.error("Python script crashed with exit code {}. Log output: {}", exitValue, processOutput);
+            }
 
             Path reportPath = tempDir.resolve("final_phishing_report.json");
             if (Files.exists(reportPath)) {
                 JsonNode rootNode = objectMapper.readTree(reportPath.toFile());
-                String verdict = rootNode.path("Verdict").asText("Unknown");
-                String predictedBehavior = rootNode.path("Predicted Behavior").asText("");
-                String technicalReason = rootNode.path("Technical Reason").asText("");
-                
-                List<String> extractedUrls = new ArrayList<>();
-                JsonNode urlsNode = rootNode.path("URL Extraction");
-                if (urlsNode.isArray()) {
-                    for (JsonNode urlNode : urlsNode) {
-                        extractedUrls.add(urlNode.asText());
-                    }
+
+                // Get the first result from the "analysis_results" array
+                JsonNode resultsArray = rootNode.path("analysis_results");
+                if (resultsArray.isArray() && !resultsArray.isEmpty()) {
+                    JsonNode firstResult = resultsArray.get(0);
+
+                    // Map to Python's output keys
+                    String verdict = firstResult.path("status").asText("Unknown");
+                    String predictedBehavior = firstResult.path("predicted_behavior").asText("");
+                    String technicalReason = firstResult.path("technical_reason").asText("");
+
+                    List<String> extractedUrls = new ArrayList<>();
+
+                    return new AttachmentScanResponse(
+                            filename, declaredMimeType, detectedMimeType, verdict,
+                            predictedBehavior, technicalReason, extractedUrls
+                    );
+                } else {
+                    // ADDED: Fallback return if the JSON exists but the array is empty/missing
+                    logger.warn("JSON report generated but 'analysis_results' is empty for {}. Process output: {}", filename, processOutput);
+                    return new AttachmentScanResponse(
+                            filename, declaredMimeType, detectedMimeType, "Unknown",
+                            "No analysis results found in report", "Empty JSON array", new ArrayList<>()
+                    );
                 }
-                
-                return new AttachmentScanResponse(
-                    filename, declaredMimeType, detectedMimeType, verdict,
-                    predictedBehavior, technicalReason, extractedUrls
-                );
             } else {
-                logger.warn("No final_phishing_report.json generated for {}", filename);
+                logger.warn("No final_phishing_report.json generated for {}. Process output: {}", filename, processOutput);
                 return new AttachmentScanResponse(
-                    filename, declaredMimeType, detectedMimeType, "Unknown",
-                    "Failed to generate report", "Missing JSON output", new ArrayList<>()
+                        filename, declaredMimeType, detectedMimeType, "Unknown",
+                        "Failed to generate report", "Missing JSON output", new ArrayList<>()
                 );
             }
 

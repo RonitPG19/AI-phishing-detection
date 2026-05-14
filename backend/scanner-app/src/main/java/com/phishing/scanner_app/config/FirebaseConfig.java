@@ -47,7 +47,7 @@ public class FirebaseConfig {
         }
     }
 
-    @Bean
+    @Bean(destroyMethod = "")
     public Firestore firestore(FirebaseApp firebaseApp) {
         // Firestore client will inherit connection pooling and timeout settings from gRPC
         // The firestoreTimeoutSeconds property is used in FirestoreReportService for operation retries

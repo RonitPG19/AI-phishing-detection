@@ -63,13 +63,17 @@ public class MailboxController {
         Authentication authentication,
         @RequestParam(defaultValue = "google") String provider,
         @PathVariable String messageId,
-        @PathVariable String attachmentId
+        @PathVariable String attachmentId,
+        @RequestParam(required = false) String filename,
+        @RequestParam(required = false) String mimeType
     ) {
         MailAttachmentContent attachment = mailboxService.getAttachment(
             authentication.getName(),
             provider,
             messageId,
-            attachmentId
+            attachmentId,
+            filename,
+            mimeType
         );
 
         return ResponseEntity.ok()

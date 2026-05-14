@@ -33,7 +33,13 @@ public class PhishingScannerController {
         @Valid @RequestBody EmailRequest request,
         @RequestParam(defaultValue = "false") boolean forceRefresh
     ) {
-        System.out.println("Scan email request: " + request);
+        System.out.println(
+            "Scan email request: provider=" + request.getProvider()
+            + ", messageId=" + request.getMessageId()
+            + ", hasBody=" + request.hasBodyContent()
+            + ", hasLinks=" + request.hasLinks()
+        );
+        System.out.println("request: " + request);
         return ResponseEntity.ok(scanOrchestrationService.scanEmail(authentication.getName(), request, forceRefresh));
     }
 
