@@ -67,7 +67,7 @@ const DEFAULT_SETTINGS = {
 };
 const AUTH_FORM_MODE_KEY = 'tribunal_auth_form_mode';
 const CURRENT_PAGE_KEY = 'tribunal_current_page';
-const VALID_PAGES = new Set(['scan', 'history', 'debug', 'profile', 'settings']);
+const VALID_PAGES = new Set(['scan', 'history', 'profile', 'settings']);
 
 let currentPage = VALID_PAGES.has(localStorage.getItem(CURRENT_PAGE_KEY))
   ? localStorage.getItem(CURRENT_PAGE_KEY)

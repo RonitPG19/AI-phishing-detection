@@ -1,33 +1,27 @@
-# Tribunal Extension
+# Tribunal Browser Extension
 
-This module is in good shape now, and this README reflects the current extension behavior (Gmail + Outlook, auth, API scan, history, debug, and Firefox dev flow).
+Tribunal is a Manifest V3 browser extension for scanning suspicious emails from Gmail and Outlook. It can scan the currently open mail tab through DOM extraction, and it also supports OAuth-backed mailbox API access through the Spring Boot backend.
 
-## What It Does
+## What The Extension Does
 
-- Injects content scripts into Gmail and Outlook web apps.
-- Extracts current email data from live DOM (subject, sender, recipients, body, links, metadata).
-- Normalizes payload and sends scan requests through background service worker.
-- Shows scan results in:
-  - popup `Scan` tab
-  - in-page floating widget (`Analyze Email`)
-- Stores local scan history and latest debug payload/result in `chrome.storage.local`.
-- Hydrates history from backend reports endpoint when logged in.
-- Supports Firebase + Flask auth flow in popup.
-
-## Current Stack
-
-- Manifest V3
-- Vanilla JavaScript
-- Vite + `@crxjs/vite-plugin`
-- Firefox packaging helper script
+- Shows a popup UI with Scan, History, Profile, and Settings tabs.
+- Injects content scripts into Gmail and Outlook web pages.
+- Extracts the currently opened email from the page for current-tab scanning.
+- Calls the Spring Boot phishing scanner API with an authenticated JWT.
+- Displays section-wise scan findings for headers, subject, body, links, and attachments metadata.
+- Stores local scan history in `chrome.storage.local`.
+- Hydrates authenticated scan history from the backend.
+- Supports Gmail OAuth through the Spring Boot backend.
+- Supports mailbox API message listing/fetching when OAuth tokens are available.
 
 ## Project Structure
 
 ```text
 extension/
   public/
-    icons/
     logo.png
+    oauth2-redirect.html
+    oauth2-redirect.js
   scripts/
     prepare-firefox-build.mjs
   src/
@@ -49,121 +43,361 @@ extension/
     shared/
       auth-client.js
       constants.js
+      mailbox-client.js
       mock-scan-result.js
       storage.js
   manifest.json
   package.json
 ```
 
-## Prerequisites
+## Local Services
 
-- Node.js 20+
-- npm
+The extension expects these local services:
 
-## Install
-
-```bash
-cd extension
-npm install
+```text
+Spring Boot backend: http://127.0.0.1:8080
+Flask auth backend:  http://127.0.0.1:5001
 ```
 
-## Build Commands
+Start Spring Boot:
 
-```bash
-# Chromium-based unpacked build
+```powershell
+cd "D:\8th sem\AI-phishing-detection\backend\scanner-app"
+.\mvnw.cmd --% -Dmaven.test.skip=true spring-boot:run
+```
+
+Start Flask auth:
+
+```powershell
+cd "D:\8th sem\AI-phishing-detection\backend\flask-auth"
+python app.py
+```
+
+## Install And Build
+
+```powershell
+cd "D:\8th sem\AI-phishing-detection\extension"
+npm install
 npm run build
+```
 
-# Firefox temporary add-on build
+The Chrome/Chromium build is generated in:
+
+```text
+extension/dist
+```
+
+For Firefox temporary add-on build:
+
+```powershell
 npm run build:firefox
 ```
 
-- Chromium output: `extension/dist`
-- Firefox output: `extension/dist-firefox`
+The Firefox build is generated in:
 
-## Load Extension
+```text
+extension/dist-firefox
+```
 
-### Chromium / Thorium / Brave
+## Loading In Chrome
 
-1. Open extensions page.
+1. Open `chrome://extensions`.
 2. Enable Developer mode.
-3. Load unpacked from `extension/dist`.
+3. Click Load unpacked.
+4. Select `extension/dist`.
+5. After every source change, run `npm run build` and reload the unpacked extension.
 
-### Firefox
+## Important URLs
 
-1. Open `about:debugging#/runtime/this-firefox`.
-2. Click `Load Temporary Add-on`.
-3. Select `extension/dist-firefox/manifest.json`.
+Defaults are defined in `src/shared/constants.js`.
 
-## Runtime Configuration
+Scan API:
 
-Defaults are in `src/shared/constants.js`:
+```text
+POST http://127.0.0.1:8080/api/phishing/scan
+```
 
-- scan API endpoint: `http://127.0.0.1:8080/api/phishing/scan`
-- Flask auth base URL: `http://127.0.0.1:5001`
+Spring OAuth start URL:
 
-Expected backend routes used by extension:
+```text
+GET http://127.0.0.1:8080/oauth2/authorization/google
+```
 
-- `POST /api/phishing/scan`
-- `GET /api/phishing/reports?limit=50` (history hydration)
-- Flask auth/user routes used by `src/shared/auth-client.js`
+OAuth redirect page inside extension:
 
-## Data Stored in `chrome.storage.local`
+```text
+chrome-extension://<extension-id>/oauth2-redirect.html#token=<jwt>&tokenType=Bearer
+```
 
-- `tribunal_api_config`
-- `tribunal_auth_config`
-- `tribunal_auth_session`
-- `tribunal_history`
-- `tribunal_widget_state`
-- `tribunal_widget_preferences`
-- `tribunal_last_scan_debug`
+Mailbox API routes:
 
-## Scan Flow
+```text
+GET http://127.0.0.1:8080/api/mail/connections
+GET http://127.0.0.1:8080/api/mail/messages?provider=google&limit=10
+GET http://127.0.0.1:8080/api/mail/messages/{messageId}?provider=google
+GET http://127.0.0.1:8080/api/mail/messages/{messageId}/attachments/{attachmentId}?provider=google
+```
 
-1. Popup or widget triggers scan.
-2. Content script extracts current mail and normalizes payload.
-3. Background service worker receives `SCAN_EMAIL`.
-4. Background calls API client:
-  - live backend request when enabled
-  - mock result fallback if API disabled/no endpoint
-5. Result is returned to UI and stored in local history/debug.
+Flask auth routes used by email/password login:
 
-## Firefox Dev Stability Notes
+```text
+POST http://127.0.0.1:5001/api/auth/login
+POST http://127.0.0.1:5001/api/auth/logout
+GET  http://127.0.0.1:5001/api/user/profile
+```
 
-The extension now includes reconnect hardening:
+## Auth Flow
 
-- popup sends background heartbeat before scan
-- popup pings content script before scan
-- auto reinjection via `chrome.scripting.executeScript` when receiver is missing
-- content watchdog cleans up stale widget context after extension reload
-- clearer recovery message and refresh fallback UX
+OAuth is initiated by the extension, but authentication and token completion happen through Spring Boot.
 
-During development, after reloading the extension, refresh Gmail/Outlook tab once for the cleanest run.
+1. User clicks Continue with Gmail in the extension.
+2. Extension opens:
 
-## Debugging
+```text
+http://127.0.0.1:8080/oauth2/authorization/google
+```
 
-Latest payload/result:
+3. Spring Boot redirects to Google OAuth.
+4. Google redirects back to Spring Boot:
+
+```text
+http://localhost:8080/login/oauth2/code/google
+```
+
+5. Spring Boot stores provider tokens for mailbox API access.
+6. Spring Boot generates the application JWT.
+7. Spring Boot redirects to the extension redirect page:
+
+```text
+chrome-extension://<extension-id>/oauth2-redirect.html#token=<jwt>&tokenType=Bearer
+```
+
+8. `public/oauth2-redirect.js` decodes the JWT claims and stores the auth session in `chrome.storage.local`.
+9. Later scan, history, and mailbox requests include:
+
+```http
+Authorization: Bearer <jwt>
+```
+
+## Current-Tab DOM Scan Flow
+
+This is the main flow when the user scans the email currently open in Gmail or Outlook.
+
+1. User opens an email in Gmail or Outlook.
+2. User clicks Scan Current Tab in the popup.
+3. Popup sends `REQUEST_ACTIVE_SCAN` to the active tab content script.
+4. `src/content/gmail.js` or `src/content/outlook.js` extracts data from the page DOM.
+5. Extracted data is normalized.
+6. Popup/background sends `SCAN_EMAIL` to the service worker.
+7. `src/background/service-worker.js` calls `scanEmailWithApi()` in `src/background/api-client.js`.
+8. `api-client.js` sends:
+
+```http
+POST http://127.0.0.1:8080/api/phishing/scan
+Authorization: Bearer <jwt>
+Content-Type: application/json
+```
+
+9. Spring Boot scans the email and returns the result.
+10. Extension renders the result and stores local history/debug data.
+
+Current-tab scan payload sent to `/api/phishing/scan` contains:
+
+```json
+{
+  "subject": "...",
+  "from": "...",
+  "bodyHtml": "...",
+  "bodyText": "...",
+  "headers": {
+    "From": ["..."],
+    "To": ["..."],
+    "Date": ["..."]
+  }
+}
+```
+
+## Mailbox API Extraction Flow
+
+This flow does not extract from the DOM. It uses the backend mailbox APIs after OAuth.
+
+1. User completes Gmail OAuth.
+2. Backend stores Google OAuth access/refresh token.
+3. Extension calls:
+
+```http
+GET http://127.0.0.1:8080/api/mail/messages?provider=google&limit=10
+Authorization: Bearer <jwt>
+```
+
+4. Spring Boot calls Gmail API using the stored provider token.
+5. Backend returns message summaries to the extension.
+6. User selects one message.
+7. Extension calls:
+
+```http
+GET http://127.0.0.1:8080/api/mail/messages/{messageId}?provider=google
+Authorization: Bearer <jwt>
+```
+
+8. Spring Boot fetches full message details from Gmail API.
+9. Extension converts the returned mail object into a scan payload.
+10. Extension sends the converted payload to:
+
+```http
+POST http://127.0.0.1:8080/api/phishing/scan
+Authorization: Bearer <jwt>
+```
+
+So the API extraction path is:
+
+```text
+Extension -> Spring Boot /api/mail/messages -> Gmail API -> Spring Boot -> Extension -> /api/phishing/scan
+```
+
+## Attachment Handling
+
+Current behavior:
+
+- Attachment metadata is included in mailbox message responses.
+- Actual attachment file bytes/content are not sent to the phishing scan route.
+
+What is included now:
+
+```text
+filename
+mime type
+size
+attachment id / metadata
+```
+
+What is not included now:
+
+```text
+PDF bytes
+DOCX content
+image content
+actual attachment body
+```
+
+There is a backend download route available:
+
+```text
+GET /api/mail/messages/{messageId}/attachments/{attachmentId}?provider=google
+```
+
+But the extension scan flow does not currently call this route before `/api/phishing/scan`.
+
+## Stored Data
+
+The extension stores state in `chrome.storage.local`.
+
+```text
+tribunal_api_config
+tribunal_auth_config
+tribunal_auth_session
+tribunal_history
+tribunal_widget_state
+tribunal_widget_preferences
+tribunal_last_scan_debug
+```
+
+Auth session contains the backend JWT and basic user profile claims.
+
+## History Flow
+
+Local history:
+
+- Stored in `tribunal_history`.
+- Updated after scans.
+
+Backend history:
+
+- Fetched from Spring Boot after login.
+- History list comes from `/api/phishing/history`.
+- Full detail is loaded with `/api/phishing/reports/{reportId}` when a history item is opened.
+
+## Debug Tab
+
+The Debug tab is currently hidden in the popup UI for project-report screenshots.
+
+The debug storage still exists internally:
 
 ```js
 chrome.storage.local.get('tribunal_last_scan_debug').then(console.log)
 ```
 
-History:
+## Troubleshooting
 
-```js
-chrome.storage.local.get('tribunal_history').then(console.log)
+### OAuth opens `/login?error`
+
+Expected URL when clicking Continue with Gmail:
+
+```text
+http://127.0.0.1:8080/oauth2/authorization/google
 ```
 
-## Known Constraints
+If the browser shows:
 
-- Extraction is DOM-based, so provider UI changes can break selectors.
-- Header quality is best-effort from DOM; not equivalent to raw RFC headers.
-- Very large newsletters with many redirects can increase scan time.
-- When sender email cannot be normalized, API scan is intentionally blocked with user-facing error.
+```text
+http://127.0.0.1:8080/login?error
+```
 
-## Recent Fixes Included
+then OAuth failed in Spring Boot. Common causes:
 
-- Outlook `From` cleanup and normalization improvements.
-- Popup nav state consistency after login/logout.
-- History hydration from backend reports endpoint.
-- Firefox reconnect/self-heal for `Receiving end does not exist`.
-- Floating widget scroll/action layout fixes for long findings.
+- Old extension build is loaded.
+- Google OAuth redirect URI is missing.
+- `app.oauth2.success-redirect-uri` uses the wrong extension id.
+- Backend was not restarted after config changes.
+
+### `Firebase: Error (auth/invalid-credential)`
+
+This comes from Firebase email/password login, not Spring OAuth.
+
+Use Continue with Gmail for OAuth login.
+
+Email/password login only works when:
+
+- User signed up through Firebase email/password.
+- User verified their email.
+- Email/password provider is enabled in Firebase.
+
+### Spring Boot shows `Client id of registration 'outlook' must not be empty`
+
+Outlook OAuth config exists but `OUTLOOK_CLIENT_ID` is empty.
+
+Fix by either commenting out Outlook config or setting:
+
+```powershell
+$env:OUTLOOK_CLIENT_ID="your-client-id"
+$env:OUTLOOK_CLIENT_SECRET="your-client-secret"
+```
+
+### Maven command fails in PowerShell
+
+Use the PowerShell-safe form:
+
+```powershell
+.\mvnw.cmd --% -Dmaven.test.skip=true spring-boot:run
+```
+
+In plain CMD, this is okay:
+
+```cmd
+mvnw.cmd -Dmaven.test.skip=true spring-boot:run
+```
+
+## Key Files
+
+```text
+src/shared/constants.js            API base URLs and defaults
+src/shared/storage.js              chrome.storage.local helpers
+src/shared/auth-client.js          Firebase + Flask auth flow
+src/shared/mailbox-client.js       Spring OAuth/mailbox API calls
+src/background/service-worker.js   runtime message handling
+src/background/api-client.js       calls /api/phishing/scan
+src/content/gmail.js               Gmail current-tab extraction entry
+src/content/outlook.js             Outlook current-tab extraction entry
+src/popup/popup.js                 popup UI, navigation, scan/history/profile
+public/oauth2-redirect.js          stores Spring Boot JWT after OAuth redirect
+```
