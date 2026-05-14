@@ -10,13 +10,22 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 @Service
 public class AttachmentScannerService {
@@ -30,6 +39,7 @@ public class AttachmentScannerService {
     private final String groqApiKey;
     private final ObjectMapper objectMapper;
     private final Tika tika;
+    private static final Map<String, Set<String>> EXTENSION_MIME_ALLOWLIST = buildExtensionMimeAllowlist();
 
     public AttachmentScannerService(
             @Value("${attachment.scanner.python-path:python}") String pythonPath,
@@ -65,6 +75,25 @@ public class AttachmentScannerService {
                 filename, declaredMimeType, detectedMimeType, "Malicious",
                 "The attachment claims to be " + declaredMimeType + " but is actually " + detectedMimeType + ". This is a common phishing technique.",
                 "MIME Spoofing Detected", new ArrayList<>()
+            );
+        }
+
+        // 2b. Extension vs MIME mismatch check
+        if (isExtensionMimeMismatch(filename, detectedMimeType)) {
+            return new AttachmentScanResponse(
+                filename, declaredMimeType, detectedMimeType, "Malicious",
+                "The file extension does not match the detected MIME type. The file may be disguised to bypass filters.",
+                "Extension/MIME Mismatch Detected", new ArrayList<>()
+            );
+        }
+
+        ArchiveInspectionResult archiveInspectionResult = inspectArchiveForNestedArchives(content, filename, detectedMimeType);
+        if (archiveInspectionResult.blocked()) {
+            return new AttachmentScanResponse(
+                filename, declaredMimeType, detectedMimeType, "Malicious",
+                archiveInspectionResult.message(),
+                archiveInspectionResult.reason(),
+                new ArrayList<>()
             );
         }
 
@@ -185,5 +214,175 @@ public class AttachmentScannerService {
                                  declaredLower.contains("text/plain");
 
         return isDetectedDangerous && isDeclaredSafe;
+    }
+
+    private boolean isExtensionMimeMismatch(String filename, String detectedMimeType) {
+        if (filename == null || detectedMimeType == null) {
+            return false;
+        }
+
+        String extension = getFileExtension(filename);
+        if (extension.isBlank()) {
+            return false;
+        }
+
+        Set<String> allowedMimeTypes = EXTENSION_MIME_ALLOWLIST.get(extension);
+        if (allowedMimeTypes == null || allowedMimeTypes.isEmpty()) {
+            return false;
+        }
+
+        String detectedLower = detectedMimeType.toLowerCase(Locale.ROOT);
+        for (String allowed : allowedMimeTypes) {
+            if (detectedLower.equals(allowed) || detectedLower.startsWith(allowed + ";")) {
+                return false;
+            }
+        }
+
+        // Avoid false positives when detector returns an unknown generic type.
+        if ("application/octet-stream".equals(detectedLower)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private String getFileExtension(String filename) {
+        int dotIndex = filename.lastIndexOf('.');
+        if (dotIndex < 0 || dotIndex == filename.length() - 1) {
+            return "";
+        }
+        return filename.substring(dotIndex + 1).toLowerCase(Locale.ROOT);
+    }
+
+    private static Map<String, Set<String>> buildExtensionMimeAllowlist() {
+        Map<String, Set<String>> mapping = new HashMap<>();
+
+        mapping.put("pdf", Set.of("application/pdf"));
+        mapping.put("txt", Set.of("text/plain"));
+        mapping.put("csv", Set.of("text/csv", "text/plain"));
+        mapping.put("json", Set.of("application/json", "text/plain"));
+        mapping.put("xml", Set.of("application/xml", "text/xml", "application/xhtml+xml"));
+
+        mapping.put("jpg", Set.of("image/jpeg"));
+        mapping.put("jpeg", Set.of("image/jpeg"));
+        mapping.put("png", Set.of("image/png"));
+        mapping.put("gif", Set.of("image/gif"));
+        mapping.put("webp", Set.of("image/webp"));
+
+        mapping.put("doc", Set.of("application/msword"));
+        mapping.put("docx", Set.of("application/vnd.openxmlformats-officedocument.wordprocessingml.document"));
+        mapping.put("xls", Set.of("application/vnd.ms-excel"));
+        mapping.put("xlsx", Set.of("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
+        mapping.put("ppt", Set.of("application/vnd.ms-powerpoint"));
+        mapping.put("pptx", Set.of("application/vnd.openxmlformats-officedocument.presentationml.presentation"));
+
+        mapping.put("zip", Set.of("application/zip"));
+        mapping.put("rar", Set.of("application/vnd.rar", "application/x-rar-compressed"));
+        mapping.put("7z", Set.of("application/x-7z-compressed"));
+        mapping.put("gz", Set.of("application/gzip", "application/x-gzip"));
+
+        mapping.put("exe", Set.of("application/x-dosexec", "application/x-msdownload"));
+        mapping.put("msi", Set.of("application/x-msi"));
+        mapping.put("js", Set.of("application/javascript", "text/javascript"));
+        mapping.put("vbs", Set.of("text/vbscript", "application/x-vbs"));
+
+        return Collections.unmodifiableMap(mapping);
+    }
+
+    private ArchiveInspectionResult inspectArchiveForNestedArchives(byte[] content, String filename, String detectedMimeType) {
+        String extension = getFileExtension(filename);
+        boolean isZip = "zip".equals(extension) || "application/zip".equalsIgnoreCase(detectedMimeType);
+        boolean is7z = "7z".equals(extension) || "application/x-7z-compressed".equalsIgnoreCase(detectedMimeType);
+
+        if (isZip) {
+            try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(content))) {
+                ZipEntry entry;
+                while ((entry = zis.getNextEntry()) != null) {
+                    if (entry.isDirectory()) {
+                        continue;
+                    }
+
+                    String entryName = entry.getName() == null ? "" : entry.getName().toLowerCase(Locale.ROOT);
+                    if (isArchiveFileName(entryName)) {
+                        return ArchiveInspectionResult.block(
+                            "Nested archive detected inside ZIP (" + entry.getName() + "). Nested archives are commonly used to hide phishing payloads.",
+                            "Nested Archive Detected"
+                        );
+                    }
+
+                    byte[] header = readEntryHeader(zis, 8);
+                    if (looksLikeZip(header) || looksLike7z(header)) {
+                        return ArchiveInspectionResult.block(
+                            "Embedded archive content detected inside ZIP entry (" + entry.getName() + ").",
+                            "Nested Archive Signature Detected"
+                        );
+                    }
+                }
+            } catch (IOException e) {
+                logger.warn("Failed to inspect ZIP archive for nested archives: {}", filename, e);
+            }
+        }
+
+        if (is7z) {
+            logger.info("7z attachment detected ({}). Nested archive inspection is limited without a 7z parser dependency.", filename);
+        }
+
+        return ArchiveInspectionResult.allow();
+    }
+
+    private boolean isArchiveFileName(String name) {
+        return name.endsWith(".zip")
+            || name.endsWith(".7z")
+            || name.endsWith(".rar")
+            || name.endsWith(".tar")
+            || name.endsWith(".gz")
+            || name.endsWith(".bz2")
+            || name.endsWith(".xz");
+    }
+
+    private byte[] readEntryHeader(InputStream in, int maxBytes) throws IOException {
+        byte[] buffer = new byte[maxBytes];
+        int offset = 0;
+        while (offset < maxBytes) {
+            int read = in.read(buffer, offset, maxBytes - offset);
+            if (read < 0) {
+                break;
+            }
+            offset += read;
+        }
+        if (offset == maxBytes) {
+            return buffer;
+        }
+        byte[] truncated = new byte[offset];
+        System.arraycopy(buffer, 0, truncated, 0, offset);
+        return truncated;
+    }
+
+    private boolean looksLikeZip(byte[] header) {
+        return header.length >= 4
+            && header[0] == 0x50
+            && header[1] == 0x4B
+            && (header[2] == 0x03 || header[2] == 0x05 || header[2] == 0x07)
+            && (header[3] == 0x04 || header[3] == 0x06 || header[3] == 0x08);
+    }
+
+    private boolean looksLike7z(byte[] header) {
+        return header.length >= 6
+            && header[0] == 0x37
+            && header[1] == 0x7A
+            && (header[2] & 0xFF) == 0xBC
+            && (header[3] & 0xFF) == 0xAF
+            && header[4] == 0x27
+            && header[5] == 0x1C;
+    }
+
+    private record ArchiveInspectionResult(boolean blocked, String message, String reason) {
+        private static ArchiveInspectionResult allow() {
+            return new ArchiveInspectionResult(false, "", "");
+        }
+
+        private static ArchiveInspectionResult block(String message, String reason) {
+            return new ArchiveInspectionResult(true, message, reason);
+        }
     }
 }
