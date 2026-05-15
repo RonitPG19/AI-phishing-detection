@@ -43,7 +43,7 @@ public class AttachmentScannerService {
 
     public AttachmentScannerService(
             @Value("${attachment.scanner.python-path:python}") String pythonPath,
-            @Value("${attachment.scanner.script-path:../attachments/ai_agent.py}") String scriptPath,
+            @Value("${attachment.scanner.script-path:../../attachments/ai_agent.py}") String scriptPath,
             @Value("${attachment.scanner.timeout-seconds:60}") int timeoutSeconds,
             @Value("${attachment.scanner.max-file-size-mb:10}") int maxFileSizeMb,
             @Value("${groq.api.key:}") String groqApiKey,
@@ -104,10 +104,21 @@ public class AttachmentScannerService {
             Path filePath = tempDir.resolve(filename);
             Files.write(filePath, content);
 
-            ProcessBuilder pb = new ProcessBuilder(pythonPath, scriptPath, tempDir.toString());
+            Path resolvedScriptPath = resolveScriptPath();
+            if (resolvedScriptPath == null) {
+                logger.warn("Attachment scanner script was not found. Configured path: {}", scriptPath);
+                return new AttachmentScanResponse(
+                    filename, declaredMimeType, detectedMimeType, "Unknown",
+                    "Attachment scanner script was not found",
+                    "Configured script path does not exist: " + scriptPath,
+                    new ArrayList<>()
+                );
+            }
+
+            ProcessBuilder pb = new ProcessBuilder(pythonPath, resolvedScriptPath.toString(), tempDir.toString());
             logger.info("Python path: {}", pythonPath);
-            logger.info("Script path: {}", scriptPath);
-            logger.info("Script exists: {}", Files.exists(Path.of(scriptPath)));
+            logger.info("Script path: {}", resolvedScriptPath);
+            logger.info("Script exists: {}", Files.exists(resolvedScriptPath));
             if (groqApiKey != null && !groqApiKey.isBlank()) {
                 pb.environment().put("GROQ_API_KEY", groqApiKey);
             }
@@ -173,7 +184,9 @@ public class AttachmentScannerService {
                 logger.warn("No final_phishing_report.json generated for {}. Process output: {}", filename, processOutput);
                 return new AttachmentScanResponse(
                         filename, declaredMimeType, detectedMimeType, "Unknown",
-                        "Failed to generate report", "Missing JSON output", new ArrayList<>()
+                        "Failed to generate report",
+                        "Missing JSON output" + summarizeProcessOutput(processOutput),
+                        new ArrayList<>()
                 );
             }
 
@@ -194,6 +207,37 @@ public class AttachmentScannerService {
                 }
             }
         }
+    }
+
+    private Path resolveScriptPath() {
+        List<Path> candidates = List.of(
+            Path.of(scriptPath),
+            Path.of("../../attachments/ai_agent.py"),
+            Path.of("attachments/ai_agent.py"),
+            Path.of("../attachments/ai_agent.py")
+        );
+
+        for (Path candidate : candidates) {
+            Path normalized = candidate.toAbsolutePath().normalize();
+            if (Files.exists(normalized)) {
+                return normalized;
+            }
+        }
+
+        return null;
+    }
+
+    private String summarizeProcessOutput(String processOutput) {
+        if (processOutput == null || processOutput.isBlank()) {
+            return "";
+        }
+
+        String compact = processOutput.replaceAll("\\s+", " ").trim();
+        int maxLength = 300;
+        if (compact.length() > maxLength) {
+            compact = compact.substring(0, maxLength) + "...";
+        }
+        return ": " + compact;
     }
 
     private boolean isMimeTypeSpoofing(String declared, String detected) {
