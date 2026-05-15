@@ -24,6 +24,7 @@ const FIREBASE_CONFIG = {
 
 let firebaseAppInstance = null
 let firebaseAuthInstance = null
+let refreshPromise = null
 
 function getFirebaseAuth() {
   if (firebaseAuthInstance) {
@@ -43,6 +44,30 @@ function parseStoredSession(rawValue) {
   } catch {
     return null
   }
+}
+
+function decodeJwtPayload(token) {
+  if (!token || typeof token !== "string") return null
+
+  const parts = token.split(".")
+  if (parts.length < 2) return null
+
+  try {
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/")
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=")
+    return JSON.parse(window.atob(padded))
+  } catch {
+    return null
+  }
+}
+
+export function isAccessTokenUsable(token) {
+  const payload = decodeJwtPayload(token)
+  if (!payload?.exp) return false
+
+  const expiresAtMs = Number(payload.exp) * 1000
+  const safetyWindowMs = 30_000
+  return expiresAtMs > Date.now() + safetyWindowMs
 }
 
 export function getStoredAuthSession() {
@@ -74,7 +99,7 @@ async function parseJsonSafe(response) {
   }
 }
 
-async function requestFlask(path, options = {}) {
+export async function requestFlask(path, options = {}) {
   const response = await fetch(`${FLASK_AUTH_BASE_URL}${path}`, {
     ...options,
     headers: {
@@ -88,10 +113,93 @@ async function requestFlask(path, options = {}) {
 
   if (!response.ok) {
     const message = data?.error || data?.message || `Request failed with status ${response.status}`
-    throw new Error(message)
+    const error = new Error(message)
+    error.status = response.status
+    throw error
   }
 
   return data || {}
+}
+
+export async function refreshFlaskSession(session = getStoredAuthSession()) {
+  if (!session?.refreshToken) {
+    clearStoredAuthSession()
+    throw new Error("Session expired. Please log in again.")
+  }
+
+  if (refreshPromise) {
+    return refreshPromise
+  }
+
+  refreshPromise = requestFlask("/api/auth/refresh", {
+    method: "POST",
+    body: JSON.stringify({ refresh: session.refreshToken }),
+  })
+    .then((data) => {
+      const accessToken = data?.access || ""
+      if (!accessToken) {
+        throw new Error("Refresh succeeded but no access token was returned.")
+      }
+
+      const nextSession = {
+        ...session,
+        accessToken,
+      }
+      saveStoredAuthSession(nextSession)
+      return nextSession
+    })
+    .catch((error) => {
+      clearStoredAuthSession()
+      throw error
+    })
+    .finally(() => {
+      refreshPromise = null
+    })
+
+  return refreshPromise
+}
+
+export async function getReliableAuthSession(session = getStoredAuthSession()) {
+  if (!session?.accessToken) {
+    clearStoredAuthSession()
+    return null
+  }
+
+  if (isAccessTokenUsable(session.accessToken)) {
+    return session
+  }
+
+  return refreshFlaskSession(session)
+}
+
+export async function requestFlaskWithAuth(path, options = {}, session = getStoredAuthSession()) {
+  const reliableSession = await getReliableAuthSession(session)
+  if (!reliableSession?.accessToken) {
+    throw new Error("Session expired. Please log in again.")
+  }
+
+  try {
+    return await requestFlask(path, {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        Authorization: `Bearer ${reliableSession.accessToken}`,
+      },
+    })
+  } catch (error) {
+    if (error.status !== 401 || !reliableSession.refreshToken) {
+      throw error
+    }
+
+    const refreshedSession = await refreshFlaskSession(reliableSession)
+    return requestFlask(path, {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        Authorization: `Bearer ${refreshedSession.accessToken}`,
+      },
+    })
+  }
 }
 
 function getFirebaseDisplayName(user) {

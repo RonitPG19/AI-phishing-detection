@@ -5,7 +5,7 @@ import { AdminHeader } from "@/components/layout/AdminHeader"
 import { AdminSidebar } from "@/components/layout/AdminSidebar"
 import { BottomNav } from "@/components/layout/BottomNav"
 import { pageMeta } from "@/lib/dashboard-data"
-import { getStoredAuthSession, logoutFromFirebaseAndFlask } from "@/lib/auth"
+import { getReliableAuthSession, getStoredAuthSession, logoutFromFirebaseAndFlask } from "@/lib/auth"
 import { getPathForRoute, getRouteFromPath } from "@/lib/routing"
 import { ForgotPasswordPage } from "@/pages/ForgotPasswordPage"
 import { LandingPage } from "@/pages/LandingPage"
@@ -58,6 +58,35 @@ export default function App() {
     window.addEventListener("popstate", handlePopState)
     return () => window.removeEventListener("popstate", handlePopState)
   }, [])
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function syncSession() {
+      if (!authSession?.accessToken) return
+
+      try {
+        const reliableSession = await getReliableAuthSession(authSession)
+        if (isMounted && reliableSession?.accessToken !== authSession.accessToken) {
+          setAuthSession(reliableSession)
+        }
+      } catch {
+        if (!isMounted) return
+        setAuthSession(null)
+        const loginPath = getPathForRoute("login")
+        if (window.location.pathname !== loginPath) {
+          window.history.replaceState({}, "", loginPath)
+        }
+        setRoute("login")
+      }
+    }
+
+    syncSession()
+
+    return () => {
+      isMounted = false
+    }
+  }, [authSession?.accessToken])
 
   useEffect(() => {
     if (!authSession?.accessToken && isProtectedRoute(route)) {
@@ -139,7 +168,7 @@ export default function App() {
             ) : null}
           </div>
 
-          <ActivePage searchQuery={searchQuery} />
+          <ActivePage searchQuery={searchQuery} authSession={authSession} />
         </main>
       </SidebarInset>
 

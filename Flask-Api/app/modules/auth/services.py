@@ -227,8 +227,19 @@ def refresh_token():
 
         if stored["refresh"] != token:
             return {"error": "Invalid refresh token"}, 401
-        
-        return {"access": generate_access_token(decoded)}
+
+        user_doc = db.collection("users").document(uid).get()
+        if not user_doc.exists:
+            return {"error": "User not found"}, 404
+
+        user_data = user_doc.to_dict() or {}
+        access_payload = {
+            "uid": uid,
+            "email": user_data.get("email") or decoded.get("email"),
+            "role": user_data.get("role", "user")
+        }
+
+        return {"access": generate_access_token(access_payload)}
     
     except Exception as e:
         return {"error": str(e)}, 401
