@@ -7,7 +7,7 @@ import { PlatformShowcase } from "@/components/landing/PlatformShowcase"
 const footerColumns = [
   {
     title: "Core Product",
-    links: ["Browser extension", "Review dashboard", "Scan history"],
+    links: ["Browser extension", "Scan history"],
   },
   {
     title: "Coverage",
@@ -92,4 +92,3 @@ export function LandingPage({ theme, onNavigate, onThemeToggle }) {
     </main>
   )
 }
-

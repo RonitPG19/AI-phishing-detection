@@ -1,23 +1,23 @@
 import { motion } from "framer-motion"
-import { ScanSearch, Fingerprint, LayoutDashboard } from "lucide-react"
+import { DatabaseZap, FileText, MailCheck } from "lucide-react"
 
 const workflows = [
   {
-    title: "Inbox Intelligence",
-    copy: "Analyze email metadata and extract actionable signals directly within your existing mail interface.",
-    icon: ScanSearch,
+    title: "Live Phishing Feeds",
+    copy: "Tribunal checks URLs against OpenPhish, PhishTank, URLhaus, and local reputation data so known malicious links are flagged quickly.",
+    icon: DatabaseZap,
     delay: 0.1,
   },
   {
-    title: "High-Fidelity Scores",
-    copy: "Transform complex sender signals and suspicious links into high-confidence results and clear risk metrics.",
-    icon: Fingerprint,
+    title: "Email Authentication Checks",
+    copy: "SPF, DKIM, DMARC, reply-to mismatches, sender spoofing, and redirect chains are analyzed before a result is shown.",
+    icon: MailCheck,
     delay: 0.2,
   },
   {
-    title: "Forensic Records",
-    copy: "Maintain a comprehensive history of scans, audit logs, and security reports in your centralized dashboard.",
-    icon: LayoutDashboard,
+    title: "Scan History & Reports",
+    copy: "Every scan can be reviewed later with detailed findings, risk sections, and report-ready evidence.",
+    icon: FileText,
     delay: 0.3,
   },
 ]
@@ -42,10 +42,10 @@ export function WorkflowCards({ theme = "dark" }) {
         </div>
         <div className="space-y-4">
           <h2 className={`text-3xl md:text-5xl font-semibold tracking-tight ${isDark ? "text-white" : "text-stone-950"}`}>
-            Secure your workflow.
+            What Tribunal checks.
           </h2>
           <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-            A streamlined evaluation process, from initial inbox scan to centralized forensic reporting.
+            Concrete signals from the email, the links, and the attachments before a verdict is shown.
           </p>
         </div>
       </div>
