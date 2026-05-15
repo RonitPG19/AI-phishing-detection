@@ -231,7 +231,10 @@ function truncate(value = '', maxLength = 48) {
 }
 
 function getIssueCount(result) {
-  return Object.values(result.sections || {}).reduce((count, section) => count + (section?.issues?.length || 0), 0);
+  return Object.values(result.sections || {}).reduce(
+    (count, section) => count + (section?.issues || []).filter((issue) => issue?.severity !== 'safe').length,
+    0
+  );
 }
 
 function getResultSource(result) {
@@ -273,7 +276,7 @@ function getExtractionSourceLabel(result) {
     return 'Current tab DOM';
   }
 
-  return 'Unknown';
+  return 'Not recorded';
 }
 
 function normalizeSeverity(value = '') {
@@ -281,6 +284,7 @@ function normalizeSeverity(value = '') {
   if (normalized === 'high' || normalized === 'critical') return 'high';
   if (normalized === 'medium') return 'medium';
   if (normalized === 'low') return 'low';
+  if (normalized === 'safe' || normalized === 'benign') return 'safe';
   return 'low';
 }
 
@@ -304,13 +308,44 @@ function mapFindingToIssue(finding = {}) {
   };
 }
 
-function mapRemoteSections(sections = {}) {
+function normalizeAttachmentSeverity(verdict = '') {
+  const normalized = String(verdict || '').toLowerCase();
+  if (normalized.includes('malicious') || normalized.includes('danger')) return 'high';
+  if (normalized.includes('suspicious') || normalized.includes('warning')) return 'medium';
+  if (normalized.includes('benign') || normalized.includes('safe')) return 'safe';
+  return 'low';
+}
+
+function mapAttachmentToIssue(attachment = {}) {
+  const filename = String(attachment.filename || 'Attachment').trim();
+  const verdict = String(attachment.verdict || 'Scanned').trim();
+  const reason = String(attachment.technicalReason || attachment.predictedBehavior || '').trim();
+  const mimeDetails = [
+    attachment.declaredMimeType ? `Declared MIME: ${attachment.declaredMimeType}` : '',
+    attachment.detectedMimeType ? `Detected MIME: ${attachment.detectedMimeType}` : ''
+  ].filter(Boolean).join('\n');
+  const extractedUrls = Array.isArray(attachment.extractedUrls) && attachment.extractedUrls.length
+    ? `Extracted URLs: ${attachment.extractedUrls.join(', ')}`
+    : '';
+
+  return {
+    severity: normalizeAttachmentSeverity(verdict),
+    title: `${filename}: ${verdict}`,
+    details: [reason, mimeDetails, extractedUrls].filter(Boolean).join('\n'),
+    explanation: String(attachment.predictedBehavior || '').trim()
+  };
+}
+
+function mapRemoteSections(sections = {}, attachments = []) {
   return {
     header: { label: 'Header', issues: (sections?.Header?.findings || []).map(mapFindingToIssue) },
     subject: { label: 'Subject', issues: (sections?.Subject?.findings || []).map(mapFindingToIssue) },
     body: { label: 'Body', issues: (sections?.Body?.findings || []).map(mapFindingToIssue) },
     links: { label: 'Links', issues: (sections?.Links?.findings || []).map(mapFindingToIssue) },
-    attachments: { label: 'Attachments', issues: [] }
+    attachments: {
+      label: 'Attachments',
+      issues: Array.isArray(attachments) ? attachments.map(mapAttachmentToIssue) : []
+    }
   };
 }
 
@@ -318,6 +353,8 @@ function mapRemoteHistoryItemToHistoryEntry(item = {}) {
   const score = Number(item.overallRiskScore) || 0;
   return {
     source: 'api',
+    extractionSource: item.messageId ? 'provider-api' : '',
+    extractionProvider: item.provider || '',
     status: 'completed',
     overallThreat: threatFromScore(score),
     overallRiskScore: score,
@@ -339,11 +376,13 @@ function mapRemoteReportToHistoryEntry(report = {}, fallback = {}) {
   return {
     ...fallback,
     source: 'api',
+    extractionSource: report.messageId || fallback.messageId ? 'provider-api' : fallback.extractionSource || '',
+    extractionProvider: report.provider || fallback.extractionProvider || '',
     status: 'completed',
     overallThreat: threatFromScore(score),
     overallRiskScore: score,
     issueCount: 0,
-    sections: mapRemoteSections(report.sections || {}),
+    sections: mapRemoteSections(report.sections || {}, report.attachments || []),
     timestamp: fallback.timestamp || report.savedAt || report.scannedAt || new Date().toISOString(),
     emailSubject: report.subject || fallback.emailSubject || 'Current message',
     message: 'Loaded from account scan history.',
@@ -375,6 +414,62 @@ function mergeHistory(localHistory = [], remoteHistory = []) {
 
   merged.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
   return merged.slice(0, 50);
+}
+
+function filterHeadersForScanPortions(headers = {}, portions = {}) {
+  if (!portions.header) {
+    return {};
+  }
+
+  if (portions.footer) {
+    return headers || {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(headers || {}).filter(([name]) => {
+      const normalized = String(name || '').toLowerCase();
+      return !normalized.includes('list-unsubscribe') && !normalized.includes('footer');
+    })
+  );
+}
+
+function applyScanPortionsToPayload(payload = {}) {
+  const portions = getSettings().scanPortions || DEFAULT_SETTINGS.scanPortions;
+  const metadata = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {};
+  const filtered = {
+    ...payload,
+    metadata: {
+      ...metadata,
+      scanPortions: { ...portions }
+    }
+  };
+
+  filtered.headers = filterHeadersForScanPortions(filtered.headers, portions);
+
+  if (!portions.subject) {
+    filtered.subject = '';
+  }
+
+  if (!portions.body) {
+    filtered.bodyHtml = '';
+    filtered.bodyText = '';
+  }
+
+  if (!portions.links) {
+    filtered.links = [];
+  }
+
+  if (!portions.attachments) {
+    filtered.attachments = [];
+    filtered.metadata = {
+      ...filtered.metadata,
+      hasAttachments: false,
+      attachmentCount: 0,
+      attachmentsSkippedBySettings: true
+    };
+  }
+
+  return filtered;
 }
 
 async function hydrateRemoteHistoryIfNeeded() {
@@ -416,6 +511,56 @@ async function hydrateRemoteHistoryIfNeeded() {
   } catch {
     // Best-effort hydration; local history continues to work even when server history fetch fails.
   }
+}
+
+async function fetchRemoteHistoryItems(limit = 100) {
+  const config = await getApiConfig();
+  if (!config?.enabled || !config?.endpoint || !hasAuthSession()) {
+    return [];
+  }
+
+  const response = await fetch(`${getPhishingApiRoot(config.endpoint)}/history?limit=${limit}`, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${authSession.accessToken}`
+    }
+  });
+
+  if (!response.ok) {
+    return [];
+  }
+
+  const payload = await response.json();
+  return Array.isArray(payload?.items) ? payload.items : [];
+}
+
+async function deleteRemoteHistoryItem(historyId) {
+  const config = await getApiConfig();
+  if (!config?.enabled || !config?.endpoint || !historyId || !hasAuthSession()) {
+    return;
+  }
+
+  await fetch(`${getPhishingApiRoot(config.endpoint)}/history/${encodeURIComponent(historyId)}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${authSession.accessToken}`
+    }
+  });
+}
+
+async function clearAllHistory() {
+  const localHistory = await getScanHistory();
+  const remoteHistory = await fetchRemoteHistoryItems();
+  const ids = new Set(
+    [...localHistory, ...remoteHistory]
+      .map((entry) => entry?.historyId)
+      .filter(Boolean)
+  );
+
+  await Promise.allSettled([...ids].map((historyId) => deleteRemoteHistoryItem(historyId)));
+  await clearScanHistory();
+  remoteHistoryHydrated = true;
 }
 
 async function fetchRemoteReport(reportId) {
@@ -1158,8 +1303,10 @@ async function requestActiveEmailPayload() {
 }
 
 async function requestBackgroundScan(payload) {
+  const filteredPayload = applyScanPortionsToPayload(payload);
+
   return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage({ type: RUNTIME_MESSAGES.SCAN_EMAIL, payload }, (response) => {
+    chrome.runtime.sendMessage({ type: RUNTIME_MESSAGES.SCAN_EMAIL, payload: filteredPayload }, (response) => {
       const runtimeError = chrome.runtime.lastError?.message || '';
       if (runtimeError) {
         reject(new Error(runtimeError));
@@ -1620,8 +1767,7 @@ document.addEventListener('click', async (event) => {
   }
 
   if (event.target.closest('#clear-history-btn')) {
-    await clearScanHistory();
-    remoteHistoryHydrated = false;
+    await clearAllHistory();
     historyDetailIndex = null;
     await renderHistoryPage();
     return;

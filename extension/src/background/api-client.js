@@ -52,6 +52,10 @@ function buildApiPayload(payload = {}) {
   const providerRaw = String(metadata.provider || payload.provider || '').trim().toLowerCase();
   const provider = providerRaw === 'gmail' ? 'google' : providerRaw;
   const resolvedMessageId = String(metadata.messageId || payload.messageId || metadata.threadId || '').trim();
+  const scanPortions = metadata.scanPortions && typeof metadata.scanPortions === 'object'
+    ? metadata.scanPortions
+    : {};
+  const includeAttachments = scanPortions.attachments !== false;
 
   return {
     subject: payload.subject || '',
@@ -61,7 +65,7 @@ function buildApiPayload(payload = {}) {
     headers: normalizeHeaders(payload.headers),
     links: normalizeLinks(payload.links),
     provider: provider || 'google',
-    messageId: resolvedMessageId,
+    messageId: includeAttachments ? resolvedMessageId : '',
     query: String(payload.query || '').trim()
   };
 }
@@ -96,7 +100,35 @@ function toIssue(finding = {}) {
   };
 }
 
-function normalizeApiSections(apiSections = {}, headerInspectionResult = {}, flatFindings = []) {
+function normalizeAttachmentSeverity(verdict = '') {
+  const normalized = String(verdict || '').toLowerCase();
+  if (normalized.includes('malicious') || normalized.includes('danger')) return 'high';
+  if (normalized.includes('suspicious') || normalized.includes('warning')) return 'medium';
+  if (normalized.includes('benign') || normalized.includes('safe')) return 'safe';
+  return 'low';
+}
+
+function toAttachmentIssue(attachment = {}) {
+  const filename = String(attachment.filename || 'Attachment').trim();
+  const verdict = String(attachment.verdict || 'Scanned').trim();
+  const reason = String(attachment.technicalReason || attachment.predictedBehavior || '').trim();
+  const mimeDetails = [
+    attachment.declaredMimeType ? `Declared MIME: ${attachment.declaredMimeType}` : '',
+    attachment.detectedMimeType ? `Detected MIME: ${attachment.detectedMimeType}` : ''
+  ].filter(Boolean).join('\n');
+  const extractedUrls = Array.isArray(attachment.extractedUrls) && attachment.extractedUrls.length
+    ? `Extracted URLs: ${attachment.extractedUrls.join(', ')}`
+    : '';
+
+  return {
+    severity: normalizeAttachmentSeverity(verdict),
+    title: `${filename}: ${verdict}`,
+    details: [reason, mimeDetails, extractedUrls].filter(Boolean).join('\n'),
+    explanation: String(attachment.predictedBehavior || '').trim()
+  };
+}
+
+function normalizeApiSections(apiSections = {}, headerInspectionResult = {}, flatFindings = [], attachments = []) {
   const sourceSections = apiSections && typeof apiSections === 'object' ? apiSections : {};
 
   const mapped = {
@@ -118,7 +150,7 @@ function normalizeApiSections(apiSections = {}, headerInspectionResult = {}, fla
     },
     attachments: {
       label: 'Attachments',
-      issues: []
+      issues: Array.isArray(attachments) ? attachments.map(toAttachmentIssue) : []
     }
   };
 
@@ -170,17 +202,19 @@ function normalizeApiSections(apiSections = {}, headerInspectionResult = {}, fla
 
 function mapApiResultToExtensionShape(apiResult = {}, originalPayload = {}) {
   const overallRiskScore = Number(apiResult.overallRiskScore) || 0;
-  const sections = normalizeApiSections(apiResult.sections, apiResult.headerInspectionResult, apiResult.findings);
-  const issueCount = Object.values(sections).reduce((count, section) => count + (section.issues?.length || 0), 0);
   const aiSummary = String(apiResult?.aiAnalysis?.summary || '').trim();
   const metadata = originalPayload.metadata && typeof originalPayload.metadata === 'object'
     ? originalPayload.metadata
     : {};
+  const extractionSource = metadata.source || (metadata.messageId || originalPayload.messageId ? 'provider-api' : 'dom');
+  const extractionProvider = metadata.provider || originalPayload.provider || '';
+  const sections = normalizeApiSections(apiResult.sections, apiResult.headerInspectionResult, apiResult.findings, apiResult.attachments);
+  const issueCount = Object.values(sections).reduce((count, section) => count + (section.issues?.length || 0), 0);
 
   return {
     source: 'api',
-    extractionSource: metadata.source || 'dom',
-    extractionProvider: metadata.provider || originalPayload.provider || '',
+    extractionSource,
+    extractionProvider,
     messageId: metadata.messageId || '',
     status: 'completed',
     overallThreat: riskLabelFromScore(overallRiskScore),
@@ -209,8 +243,13 @@ export async function scanEmailWithApi(payload) {
     throw new Error('Sender email could not be extracted from this message. Refresh the page and try again.');
   }
 
+  const shouldForceRefresh = Boolean(apiPayload.messageId);
+  const scanEndpoint = shouldForceRefresh
+    ? `${config.endpoint}${config.endpoint.includes('?') ? '&' : '?'}forceRefresh=true`
+    : config.endpoint;
+
   // The background script owns the network boundary so auth/retry logic can stay centralized.
-  const response = await fetch(config.endpoint, {
+  const response = await fetch(scanEndpoint, {
     method: 'POST',
     headers: {
       'Accept': 'application/json',
