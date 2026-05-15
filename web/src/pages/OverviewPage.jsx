@@ -1,6 +1,5 @@
 import * as React from "react"
 import { Area, AreaChart, XAxis } from "recharts"
-import { Mail } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,14 +16,16 @@ import {
 } from "@/lib/dashboard-data"
 
 const chartConfig = {
-  desktop: {
-    label: "Cloud Scans",
+  scans: {
+    label: "Scans",
     color: "hsl(var(--foreground))",
-  },
-  mobile: {
-    label: "Node Scans",
-    color: "hsl(var(--muted-foreground))",
-  },
+  }
+}
+
+const timeRangeLabels = {
+  "90d": "Scans in last 3 months",
+  "30d": "Scans in last 30 days",
+  "7d": "Scans in last 7 days"
 }
 
 export function OverviewPage({ searchQuery = "" }) {
@@ -39,11 +40,14 @@ export function OverviewPage({ searchQuery = "" }) {
     const startDate = new Date(referenceDate)
     startDate.setDate(startDate.getDate() - daysToSubtract)
     return date >= startDate
-  })
+  }).map((item) => ({
+    ...item,
+    scans: Number(item.desktop || 0) + Number(item.mobile || 0)
+  }))
 
   return (
     <div className="space-y-6">
-      <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 md:grid md:grid-cols-2 md:gap-4 md:overflow-visible lg:grid-cols-4">
+      <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 md:grid md:grid-cols-2 md:gap-4 md:overflow-visible">
         {kpis.map((item) => {
           return (
             <Card key={item.label} className="min-w-[220px] shrink-0 snap-start md:min-w-0">
@@ -66,7 +70,7 @@ export function OverviewPage({ searchQuery = "" }) {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>Detection Activity</CardTitle>
-                <CardDescription>Weekly Scans</CardDescription>
+                <CardDescription>{timeRangeLabels[timeRange]}</CardDescription>
               </div>
             </div>
           </CardHeader>
@@ -74,13 +78,9 @@ export function OverviewPage({ searchQuery = "" }) {
             <ChartContainer config={chartConfig} className="aspect-auto h-[200px] w-full">
               <AreaChart data={filteredData}>
                 <defs>
-                  <linearGradient id="areaGradientDesktop" x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient id="areaGradientScans" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="currentColor" stopOpacity={0.3} className="text-foreground" />
                     <stop offset="95%" stopColor="currentColor" stopOpacity={0} className="text-foreground" />
-                  </linearGradient>
-                  <linearGradient id="areaGradientMobile" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="currentColor" stopOpacity={0.2} className="text-muted-foreground" />
-                    <stop offset="95%" stopColor="currentColor" stopOpacity={0} className="text-muted-foreground" />
                   </linearGradient>
                 </defs>
                 <XAxis hide dataKey="date" />
@@ -93,22 +93,11 @@ export function OverviewPage({ searchQuery = "" }) {
                   }
                 />
                 <Area
-                    dataKey="mobile"
+                    dataKey="scans"
                     type="natural"
-                    fill="url(#areaGradientMobile)"
+                    fill="url(#areaGradientScans)"
                     stroke="currentColor"
                     strokeWidth={1.5}
-                    stackId="a"
-                    activeDot={{ r: 3, strokeWidth: 0 }}
-                    className="text-muted-foreground"
-                />
-                <Area
-                    dataKey="desktop"
-                    type="natural"
-                    fill="url(#areaGradientDesktop)"
-                    stroke="currentColor"
-                    strokeWidth={1.5}
-                    stackId="a"
                     activeDot={{ r: 4, strokeWidth: 0 }}
                     className="text-foreground"
                 />
@@ -122,16 +111,6 @@ export function OverviewPage({ searchQuery = "" }) {
                 <TabsTrigger value="7d">Last 7 days</TabsTrigger>
               </TabsList>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="rounded-lg border border-border p-4">
-                  <p className="text-sm text-muted-foreground">Suspicious Links</p>
-                  <p className="mt-2 text-xl font-semibold">428</p>
-                </div>
-                <div className="rounded-lg border border-border p-4">
-                  <p className="text-sm text-muted-foreground">Reply-to Mismatch</p>
-                  <p className="mt-2 text-xl font-semibold">312</p>
-                </div>
-              </div>
             </Tabs>
           </CardContent>
         </Card>
@@ -154,31 +133,6 @@ export function OverviewPage({ searchQuery = "" }) {
                   <Badge variant={item.variant} className="w-14 justify-center text-[10px] py-0 px-1">
                     {item.value}%
                   </Badge>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle>Email Providers</CardTitle>
-              <CardDescription>Coverage by provider</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {["Gmail", "Outlook"].map((provider) => (
-                <div key={provider} className="flex items-center justify-between rounded-lg border border-border p-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted">
-                      <Mail className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">{provider}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {provider === "Gmail" ? "7,430 scans" : "5,410 scans"}
-                      </p>
-                    </div>
-                  </div>
-                  <Badge variant="secondary">Active</Badge>
                 </div>
               ))}
             </CardContent>

@@ -1,32 +1,31 @@
-import { useState } from "react"
+﻿import { useState } from "react"
 
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { users } from "@/lib/dashboard-data"
 
-const roleOrder = ["Viewer", "Analyst", "Admin"]
+const roles = ["Viewer", "Analyst", "Admin"]
+const statuses = ["Active", "Suspended"]
 
 export function UsersPage() {
-  const [userRows, setUserRows] = useState(users)
+  const [userRows, setUserRows] = useState(() =>
+    users.map((user) => ({
+      ...user,
+      status: user.status === "Suspended" ? "Suspended" : "Active",
+    }))
+  )
 
-  const cycleRole = (name) => {
+  const updateRole = (name, role) => {
     setUserRows((current) =>
-      current.map((user) => {
-        if (user.name !== name) return user
-        const nextIndex = (roleOrder.indexOf(user.role) + 1) % roleOrder.length
-        return { ...user, role: roleOrder[nextIndex] }
-      })
+      current.map((user) => (user.name === name ? { ...user, role } : user))
     )
   }
 
-  const toggleStatus = (name) => {
+  const updateStatus = (name, status) => {
     setUserRows((current) =>
-      current.map((user) => {
-        if (user.name !== name) return user
-        return { ...user, status: user.status === "Active" ? "Suspended" : "Active" }
-      })
+      current.map((user) => (user.name === name ? { ...user, status } : user))
     )
   }
 
@@ -34,79 +33,100 @@ export function UsersPage() {
     setUserRows((current) => current.filter((user) => user.name !== name))
   }
 
-  return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>User Management</CardTitle>
-          <CardDescription>User records synced from the database.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3 sm:hidden">
-            {userRows.map((user) => (
-              <div key={user.name} className="rounded-lg border border-border p-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium">{user.name}</p>
-                  <Badge variant={user.status === "Active" ? "secondary" : "neutral"}>{user.status}</Badge>
-                </div>
-                <div className="mt-2 text-xs text-muted-foreground">
-                  {user.role} - {user.scans} scans
-                </div>
-                <div className="mt-3 grid grid-cols-3 gap-2">
-                  <Button variant="outline" size="sm" onClick={() => cycleRole(user.name)}>
-                    Role
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => toggleStatus(user.name)}>
-                    {user.status === "Active" ? "Suspend" : "Activate"}
-                  </Button>
-                  <Button variant="destructive" size="sm" onClick={() => removeUser(user.name)}>
-                    Remove
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
+  const adminRows = userRows.filter((user) => user.role === "Admin")
+  const memberRows = userRows.filter((user) => user.role !== "Admin")
 
-          <div className="hidden sm:block">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Scans</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+  const renderRoleSelect = (user, compact = false) => (
+    <Select value={user.role} onValueChange={(value) => updateRole(user.name, value)}>
+      <SelectTrigger className={`${compact ? "w-full" : "w-36"} bg-background/60`}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {roles.map((role) => (
+          <SelectItem key={role} value={role}>{role}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+
+  const renderStatusSelect = (user, compact = false) => (
+    <Select value={user.status} onValueChange={(value) => updateStatus(user.name, value)}>
+      <SelectTrigger className={`${compact ? "w-full" : "w-40"} bg-background/60`}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {statuses.map((status) => (
+          <SelectItem key={status} value={status}>{status}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+
+  const renderSection = (title, rows) => (
+    <Card className="overflow-hidden">
+      <div className="border-b border-border/60 px-5 py-4">
+        <h2 className="text-base font-semibold">{title}</h2>
+      </div>
+      <CardContent className="p-0">
+        <div className="space-y-3 p-4 sm:hidden">
+          {rows.map((user) => (
+            <div key={user.name} className="rounded-xl border border-border bg-muted/10 p-3">
+              <div>
+                <p className="text-sm font-semibold">{user.name}</p>
+                <p className="mt-1 truncate text-xs text-muted-foreground">{user.email}</p>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                {renderRoleSelect(user, true)}
+                {renderStatusSelect(user, true)}
+              </div>
+
+              <Button className="mt-3 w-full" variant="destructive" size="sm" onClick={() => removeUser(user.name)}>
+                Remove
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        <div className="hidden sm:block">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-border/70 bg-muted/20 hover:bg-muted/20">
+                <TableHead className="pl-5">User</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="pr-5 text-right">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((user) => (
+                <TableRow key={user.name} className="border-border/60 hover:bg-muted/20">
+                  <TableCell className="pl-5">
+                    <div>
+                      <p className="font-semibold">{user.name}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{user.email}</p>
+                    </div>
+                  </TableCell>
+                  <TableCell>{renderRoleSelect(user)}</TableCell>
+                  <TableCell>{renderStatusSelect(user)}</TableCell>
+                  <TableCell className="pr-5 text-right align-middle">
+                    <Button variant="destructive" size="sm" onClick={() => removeUser(user.name)}>
+                      Remove
+                    </Button>
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {userRows.map((user) => (
-                  <TableRow key={user.name}>
-                    <TableCell className="font-medium">{user.name}</TableCell>
-                    <TableCell>{user.role}</TableCell>
-                    <TableCell>{user.scans}</TableCell>
-                    <TableCell>
-                      <Badge variant={user.status === "Active" ? "secondary" : "neutral"}>{user.status}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex justify-end gap-2">
-                        <Button variant="outline" size="sm" onClick={() => cycleRole(user.name)}>
-                          Change Role
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => toggleStatus(user.name)}>
-                          {user.status === "Active" ? "Suspend" : "Activate"}
-                        </Button>
-                        <Button variant="destructive" size="sm" onClick={() => removeUser(user.name)}>
-                          Remove
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  )
+
+  return (
+    <div className="space-y-5">
+      {renderSection("Admin Management", adminRows)}
+      {renderSection("User Management", memberRows)}
     </div>
   )
 }

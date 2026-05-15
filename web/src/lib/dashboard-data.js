@@ -1,15 +1,9 @@
 import {
-  Activity,
-  AlertTriangle,
-  BarChart3,
-  Clock,
-  FileJson,
-  FileSpreadsheet,
+    AlertTriangle,
   FileText,
   LayoutDashboard,
   Link2,
   Mail,
-  Percent,
   Radar,
   ShieldAlert,
   ShieldCheck,
@@ -21,29 +15,17 @@ import {
 
 export const navItems = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "reports", label: "Reports", icon: BarChart3 },
   { id: "users", label: "User Management", icon: Users }
 ]
 
 export const pageMeta = {
   overview: { title: "Admin Dashboard", description: "Operational summary of recent scans." },
-  reports: { title: "Reports", description: "Scheduled and on-demand summaries." },
-  users: { title: "User Management", description: "Manage platform users directly from the database." },
-  settings: { title: "Settings", description: "Preferences and system controls." }
+  users: { title: "User Management", description: "" }
 }
 
 export const kpis = [
   { label: "Total Scans", value: "24,812", delta: "+12.4%", icon: Radar },
-  { label: "Blocked Threats", value: "1,428", delta: "+4.2%", icon: ShieldCheck },
-  { label: "False Positive Rate", value: "0.8%", delta: "-0.3%", icon: Percent },
-  { label: "Avg. Analysis Time", value: "1.2s", delta: "-0.4s", icon: Clock }
-]
-
-export const reportingKpis = [
-  { label: "Reports Generated", value: "1,240", delta: "+18%", icon: FileText },
-  { label: "Scheduled Tasks", value: "14 Active", delta: "2 Pending", icon: Clock },
-  { label: "Total Storage", value: "1.2 GB", delta: "0.4 GB used", icon: Activity },
-  { label: "Compliance Score", value: "98%", delta: "+2% gain", icon: ShieldCheck }
+  { label: "Blocked Threats", value: "1,428", delta: "+4.2%", icon: ShieldCheck }
 ]
 
 export const activityBars = [18, 26, 20, 36, 28, 44, 40]
@@ -157,15 +139,9 @@ export const chartData = [
   { date: "2024-06-30", desktop: 446, mobile: 400 },
 ]
 
-export const reportCards = [
-  { id: 1, title: "Weekly Summary", detail: "PDF format • 4.2 MB", status: "Ready", owner: "System", date: "Today", icon: FileText },
-  { id: 2, title: "Top Domains", detail: "CSV format • 1.8 MB", status: "Scheduled", owner: "Security Admin", date: "Tomorrow", icon: FileSpreadsheet },
-  { id: 3, title: "False Positive Review", detail: "JSON format • 0.5 MB", status: "Draft", owner: "Analyst Team", date: "2 days ago", icon: FileJson }
-]
-
 export const users = [
   { id: 1, name: "Ariana Patel", email: "a.patel@tribunal.ai", role: "Admin", scans: 182, status: "Active", joined: "2024-01-12" },
   { id: 2, name: "Jordan Kim", email: "j.kim@tribunal.ai", role: "Analyst", scans: 94, status: "Active", joined: "2024-02-05" },
-  { id: 3, name: "Luis Ortega", email: "l.ortega@tribunal.ai", role: "Viewer", scans: 41, status: "Idle", joined: "2024-03-18" },
+  { id: 3, name: "Luis Ortega", email: "l.ortega@tribunal.ai", role: "Viewer", scans: 41, status: "Suspended", joined: "2024-03-18" },
   { id: 4, name: "Sara Cohen", email: "s.cohen@tribunal.ai", role: "Analyst", scans: 127, status: "Active", joined: "2024-01-29" }
 ]

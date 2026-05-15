@@ -11,8 +11,6 @@ import { ForgotPasswordPage } from "@/pages/ForgotPasswordPage"
 import { LandingPage } from "@/pages/LandingPage"
 import { LoginPage } from "@/pages/LoginPage"
 import { OverviewPage } from "@/pages/OverviewPage"
-import { ReportsPage } from "@/pages/ReportsPage"
-import { SettingsPage } from "@/pages/SettingsPage"
 import { SignupPage } from "@/pages/SignupPage"
 import { UsersPage } from "@/pages/UsersPage"
 import { TermsPage } from "@/pages/TermsPage"
@@ -20,9 +18,7 @@ import { PrivacyPage } from "@/pages/PrivacyPage"
 
 const pageComponents = {
   overview: OverviewPage,
-  reports: ReportsPage,
   users: UsersPage,
-  settings: SettingsPage,
 }
 
 const authComponents = {
@@ -138,7 +134,9 @@ export default function App() {
         <main className="flex-1 space-y-6 px-4 pb-28 pt-6 md:px-6 md:pb-4 md:pt-2">
           <div>
             <h1 className="text-3xl font-semibold">{pageMeta[safeRoute].title}</h1>
-            <p className="text-sm text-muted-foreground">{pageMeta[safeRoute].description}</p>
+            {pageMeta[safeRoute].description ? (
+              <p className="text-sm text-muted-foreground">{pageMeta[safeRoute].description}</p>
+            ) : null}
           </div>
 
           <ActivePage searchQuery={searchQuery} />

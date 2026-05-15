@@ -94,6 +94,22 @@ async function requestFlask(path, options = {}) {
   return data || {}
 }
 
+function getFirebaseDisplayName(user) {
+  return user?.displayName
+    || user?.providerData?.find((provider) => provider?.displayName)?.displayName
+    || user?._tokenResponse?.displayName
+    || ""
+}
+
+function getFirebasePhotoUrl(user) {
+  return user?.photoURL
+    || user?.providerData?.find((provider) => provider?.photoURL)?.photoURL
+    || user?._tokenResponse?.photoUrl
+    || user?._tokenResponse?.photoURL
+    || user?.reloadUserInfo?.photoUrl
+    || ""
+}
+
 export async function fetchUserProfile(accessToken) {
   const data = await requestFlask("/api/user/profile", {
     method: "GET",
@@ -107,6 +123,8 @@ export async function fetchUserProfile(accessToken) {
 
 async function exchangeFirebaseUserWithFlask(user, fallbackEmail) {
   const firebaseIdToken = await user.getIdToken()
+  const firebaseDisplayName = getFirebaseDisplayName(user)
+  const firebasePhotoUrl = getFirebasePhotoUrl(user)
   const authData = await requestFlask("/api/auth/firebase-login", {
     method: "POST",
     headers: {
@@ -129,6 +147,8 @@ async function exchangeFirebaseUserWithFlask(user, fallbackEmail) {
     user: {
       ...(profile || {}),
       email: profile?.email || user.email || fallbackEmail || "",
+      displayName: profile?.displayName || profile?.name || profile?.full_name || firebaseDisplayName,
+      photoURL: profile?.photoURL || profile?.photoUrl || profile?.picture || profile?.avatar_url || firebasePhotoUrl,
       provider: profile?.provider || user.providerData?.[0]?.providerId || "firebase",
     },
     loggedInAt: new Date().toISOString(),

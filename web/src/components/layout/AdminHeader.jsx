@@ -11,8 +11,8 @@ export function AdminHeader({ theme, onThemeToggle, authSession, onLogout, searc
 
   const isDark = theme === "dark"
   const user = authSession?.user
-  const avatarUrl = user?.photoURL
-  const displayName = user?.displayName || "Admin User"
+  const avatarUrl = user?.photoURL || user?.photoUrl || user?.picture || user?.avatarUrl || user?.avatar_url || ""
+  const displayName = user?.displayName || user?.name || "Admin User"
   const email = user?.email || "admin@tribunal.io"
 
   useEffect(() => {
@@ -59,11 +59,11 @@ export function AdminHeader({ theme, onThemeToggle, authSession, onLogout, searc
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 p-0 rounded-full bg-muted/30 border border-border/60 overflow-hidden hover:border-foreground/20 transition-all"
+                  className="h-9 w-9 p-0 rounded-full bg-muted/30 border border-border/70 overflow-hidden shadow-[0_0_0_4px_rgba(255,255,255,0.03)] hover:border-foreground/25 hover:bg-muted/50 transition-all"
                   onClick={() => setIsProfileOpen(!isProfileOpen)}
                 >
                   {avatarUrl ? (
-                    <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
+                    <img referrerPolicy="no-referrer" src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center bg-primary/10">
                       <User className="h-5 w-5 text-primary" />
@@ -77,22 +77,33 @@ export function AdminHeader({ theme, onThemeToggle, authSession, onLogout, searc
                       initial={{ opacity: 0, scale: 0.95, y: 10 }}
                       animate={{ opacity: 1, scale: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                      className={`absolute right-0 top-full mt-2 w-64 rounded-2xl border border-border/40 p-2 shadow-2xl backdrop-blur-2xl ring-1 ring-black/10 ${isDark ? "bg-neutral-950/95" : "bg-white/95"
+                      className={`absolute right-0 top-full mt-3 w-64 overflow-hidden rounded-[22px] border border-border/60 p-3 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl ring-1 ring-white/[0.04] ${isDark ? "bg-neutral-950/95" : "bg-white/95"
                         }`}
                     >
-                      <div className="px-3 py-3 border-b border-border/40 mb-1">
-                        <p className="text-sm font-semibold truncate leading-none">{displayName}</p>
-                        <p className="text-[10px] text-muted-foreground truncate mt-1.5 font-medium uppercase tracking-wider">{email}</p>
+                      <div className="flex items-center gap-3 border-b border-border/50 px-1.5 pb-3 pt-1">
+                        <div className="h-9 w-9 overflow-hidden rounded-full border border-border/70 bg-muted/50">
+                          {avatarUrl ? (
+                            <img referrerPolicy="no-referrer" src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center">
+                              <User className="h-5 w-5 text-muted-foreground" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold leading-tight">{displayName}</p>
+                          <p className="mt-1 truncate text-xs text-muted-foreground">{email}</p>
+                        </div>
                       </div>
-                      <div className="p-1">
+                      <div className="pt-2">
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/5 rounded-xl transition-all h-10"
+                          className="w-full justify-start rounded-2xl text-foreground hover:text-foreground hover:bg-white/5 transition-all h-10"
                           onClick={onLogout}
                         >
                           <LogOut className="h-4 w-4 mr-2.5" />
-                          <span className="font-medium text-sm">Logout session</span>
+                          <span className="font-medium text-sm">Logout</span>
                         </Button>
                       </div>
                     </motion.div>

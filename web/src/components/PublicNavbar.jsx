@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { getPathForRoute } from "@/lib/routing"
-import { ChevronDown, Mail, ShieldCheck, Zap, Terminal, GlobeLock, Menu, X, Sun, Moon, Radar, Fingerprint, Activity, Target } from "lucide-react"
+import { ChevronDown, Mail, ShieldCheck, Zap, Terminal, GlobeLock, Menu, X, Sun, Moon, Radar, Fingerprint, History, Target } from "lucide-react"
 
 const NAV_ITEMS = [
   {
@@ -10,11 +10,11 @@ const NAV_ITEMS = [
     dropdown: {
       type: "mega",
       links: [
-        { title: "Inbox Scanning", desc: "Scan emails as they arrive, directly in your inbox.", icon: Radar },
-        { title: "Sender Insights", desc: "Know exactly who sent it and if they're spoofing.", icon: Fingerprint },
-        { title: "Link Safety Check", desc: "We scan every link so you don't have to worry.", icon: GlobeLock },
-        { title: "Activity History", desc: "Keep track of all your past scans and reports.", icon: Terminal },
-        { title: "Risk Analysis", desc: "Simple scores that tell you exactly what's wrong.", icon: Target },
+        { title: "Gmail API scans", desc: "Analyze the selected message with OAuth-backed mailbox access.", icon: Mail },
+        { title: "Header checks", desc: "Inspect SPF, DKIM, DMARC, sender, and reply-path signals.", icon: Fingerprint },
+        { title: "Link tracing", desc: "Resolve redirects and score suspicious destinations.", icon: GlobeLock },
+        { title: "Attachment review", desc: "Download and analyze supported attachments through the backend.", icon: ShieldCheck },
+        { title: "Scan history", desc: "Save report snapshots for review and cleanup.", icon: History },
       ],
       featured: [
         {
@@ -57,9 +57,9 @@ export function PublicNavbar({ onNavigate, theme = "dark", onThemeToggle }) {
 
   return (
     <div className="relative z-[100] flex justify-center w-full max-w-5xl mx-auto" ref={containerRef}>
-      <nav className={`relative flex items-center justify-between md:justify-center w-full md:w-auto rounded-full px-2 py-1.5 backdrop-blur-3xl ${
+      <nav className={`relative flex items-center justify-between md:justify-center w-full md:w-auto rounded-full px-2 py-1.5 backdrop-blur-[34px] backdrop-saturate-150 ${
         isDark
-          ? "border border-white/10 bg-black/30 shadow-[0_8px_32px_rgba(0,0,0,0.4),inset_0_1px_1px_rgba(255,255,255,0.1)] ring-1 ring-white/[0.05]"
+          ? "border border-white/[0.08] bg-[#030303]/75 shadow-[0_18px_60px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.08)] ring-1 ring-white/[0.04] before:absolute before:inset-0 before:rounded-full before:bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.015)_46%,rgba(0,0,0,0.18))] before:pointer-events-none"
           : "border border-stone-200/80 bg-white/85 shadow-[0_18px_50px_rgba(15,23,42,0.12),inset_0_1px_0_rgba(255,255,255,0.95)] ring-1 ring-stone-200/60"
       }`}>
         <div className="flex items-center">
@@ -98,35 +98,35 @@ export function PublicNavbar({ onNavigate, theme = "dark", onThemeToggle }) {
                       transition={{ duration: 0.2, ease: "easeOut" }}
                       className="absolute left-1/2 -translate-x-1/2 top-full pt-4"
                     >
-                      <div className={`relative overflow-hidden rounded-[32px] backdrop-blur-[60px] backdrop-saturate-[180%] ${item.dropdown.type === "mega" ? "w-[380px]" : "w-48"} ${
+                      <div className={`relative overflow-hidden rounded-[28px] backdrop-blur-[60px] backdrop-saturate-[180%] ${item.dropdown.type === "mega" ? "w-[350px]" : "w-48"} ${
                         isDark
-                          ? "border border-white/[0.08] bg-black/95 shadow-[0_32px_64px_-16px_rgba(0,0,0,1),inset_0_1px_1px_rgba(255,255,255,0.05)] ring-1 ring-white/[0.05]"
+                          ? "border border-white/[0.08] bg-[#030303]/90 shadow-[0_32px_70px_-18px_rgba(0,0,0,1),inset_0_1px_0_rgba(255,255,255,0.07)] ring-1 ring-white/[0.04]"
                           : "border border-stone-200/80 bg-white/95 shadow-[0_28px_70px_-24px_rgba(15,23,42,0.22),inset_0_1px_0_rgba(255,255,255,0.95)] ring-1 ring-stone-200/60"
                       }`}>
-                        <div className={`absolute inset-0 pointer-events-none ${isDark ? "bg-[url('https://res.cloudinary.com/djpkwtowz/image/upload/v1715478440/noise_uvw6h0.png')] opacity-[0.05] mix-blend-overlay" : "bg-[radial-gradient(circle_at_bottom_right,rgba(59,130,246,0.05),transparent_35%)]"}`} />
+                        <div className={`absolute inset-0 pointer-events-none ${isDark ? "bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.08),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0))]" : "bg-[radial-gradient(circle_at_bottom_right,rgba(59,130,246,0.05),transparent_35%)]"}`} />
                         
                         {item.dropdown.type === "mega" ? (
-                          <div className="p-4">
-                            <div className="space-y-4">
+                          <div className="relative p-3">
+                            <div className="space-y-2">
                               <div className="grid grid-cols-1 gap-1">
                                 {item.dropdown.links.map((link) => (
                                   <a
                                     key={link.title}
                                     href="#"
-                                    className={`group flex items-start gap-3 rounded-2xl p-3 transition-colors ${
-                                      isDark ? "hover:bg-white/5" : "hover:bg-stone-900/5"
+                                    className={`group flex items-start gap-3 rounded-[20px] p-3 transition-all duration-200 ${
+                                      isDark ? "hover:bg-white/[0.055]" : "hover:bg-stone-900/5"
                                     }`}
                                   >
                                     <div className={`flex h-9 w-9 items-center justify-center rounded-xl transition-colors ${
                                       isDark
-                                        ? "border border-white/5 bg-white/5 text-neutral-400 group-hover:text-white group-hover:border-white/10"
+                                        ? "border border-white/[0.07] bg-white/[0.045] text-neutral-400 group-hover:border-white/[0.14] group-hover:text-white"
                                         : "border border-stone-200 bg-stone-100 text-stone-500 group-hover:text-stone-900 group-hover:border-stone-300"
                                     }`}>
                                       {link.icon && <link.icon className="h-4 w-4" />}
                                     </div>
                                     <div>
-                                      <p className={`text-[13px] font-medium ${isDark ? "text-white" : "text-stone-900"}`}>{link.title}</p>
-                                      <p className={`text-[12px] leading-normal ${isDark ? "text-neutral-500" : "text-stone-500"}`}>{link.desc}</p>
+                                      <p className={`text-[13px] font-semibold tracking-[-0.01em] ${isDark ? "text-white" : "text-stone-900"}`}>{link.title}</p>
+                                      <p className={`mt-0.5 text-[12px] leading-snug ${isDark ? "text-neutral-500" : "text-stone-500"}`}>{link.desc}</p>
                                     </div>
                                   </a>
                                 ))}
