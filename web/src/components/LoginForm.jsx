@@ -20,6 +20,32 @@ function GoogleIcon() {
   )
 }
 
+function getFriendlyLoginError(error) {
+  const message = String(error?.message || "")
+
+  if (/auth\/invalid-credential|auth\/wrong-password|auth\/user-not-found/i.test(message)) {
+    return "Oops :( That email or password doesn’t look right. Please check it and try again."
+  }
+
+  if (/auth\/invalid-email/i.test(message)) {
+    return "Oops :( Please enter a valid email address."
+  }
+
+  if (/auth\/too-many-requests/i.test(message)) {
+    return "Oops :( Too many login attempts. Please wait a bit and try again."
+  }
+
+  if (/email not verified|verify your email/i.test(message)) {
+    return "Oops :( Please verify your email first, then log in."
+  }
+
+  if (/network|failed to fetch/i.test(message)) {
+    return "Oops :( We couldn’t reach the server. Please check your connection and try again."
+  }
+
+  return "Oops :( We couldn’t log you in right now. Please try again."
+}
+
 export function LoginForm({ className, onNavigate, onAuthSuccess, ...props }) {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -40,7 +66,7 @@ export function LoginForm({ className, onNavigate, onAuthSuccess, ...props }) {
     setNotice("")
 
     if (!email.trim() || !password) {
-      setError("Email and password are both required.")
+      setError("Oops :( Please enter both your email and password.")
       return
     }
 
@@ -50,7 +76,7 @@ export function LoginForm({ className, onNavigate, onAuthSuccess, ...props }) {
       const session = await loginWithFirebaseAndFlask({ email: email.trim(), password })
       onAuthSuccess?.(session)
     } catch (submitError) {
-      setError(submitError.message || "Unable to log in right now.")
+      setError(getFriendlyLoginError(submitError))
     } finally {
       setIsSubmitting(false)
     }

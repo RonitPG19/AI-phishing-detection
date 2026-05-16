@@ -635,6 +635,36 @@ function renderAuthMessage() {
   return '';
 }
 
+function getFriendlyAuthError(error, action = 'log in') {
+  const message = String(error?.message || error || '');
+
+  if (/auth\/invalid-credential|auth\/wrong-password|auth\/user-not-found/i.test(message)) {
+    return "Oops :( That email or password doesn't look right. Please check it and try again.";
+  }
+
+  if (/auth\/invalid-email/i.test(message)) {
+    return 'Oops :( Please enter a valid email address.';
+  }
+
+  if (/auth\/email-already-in-use/i.test(message)) {
+    return 'Oops :( That email already has an account. Try logging in instead.';
+  }
+
+  if (/auth\/weak-password/i.test(message)) {
+    return 'Oops :( Please use at least 6 characters for your password.';
+  }
+
+  if (/auth\/too-many-requests/i.test(message)) {
+    return 'Oops :( Too many attempts right now. Please wait a bit and try again.';
+  }
+
+  if (/auth\/network-request-failed|network|fetch/i.test(message)) {
+    return 'Oops :( Network trouble. Please check your connection and try again.';
+  }
+
+  return `Oops :( We couldn't ${action} right now. Please try again.`;
+}
+
 function hasAuthSession() {
   return Boolean(authSession?.accessToken);
 }
@@ -696,11 +726,16 @@ function renderProfileAvatar() {
 }
 
 function renderAuthPage() {
+  const authTitle = authFormMode === 'signup' ? 'Create your Tribunal account' : 'Sign in to use Tribunal';
+  const authCopy = authFormMode === 'signup'
+    ? 'Sign up to start scanning phishing emails with Tribunal.'
+    : 'Log in to analyze phishing emails with Tribunal.';
+
   return `
     <div class="auth-page page-enter">
       <div class="auth-page-hero">
-        <h2 class="auth-page-title">Sign in to use Tribunal</h2>
-        <p class="auth-page-copy">Log in to analyze phishing emails with Tribunal.</p>
+        <h2 class="auth-page-title">${authTitle}</h2>
+        <p class="auth-page-copy">${authCopy}</p>
       </div>
 
       <div class="auth-card auth-page-card">
@@ -1528,20 +1563,20 @@ async function handleAuthSubmit() {
   authNotice = '';
 
   if (!email || !password) {
-    authError = 'Email and password are both required.';
+    authError = 'Oops :( Please enter both your email and password.';
     renderCurrentPage();
     return;
   }
 
   if (authFormMode === 'signup') {
     if (password.length < 6) {
-      authError = 'Use at least 6 characters for the password.';
+      authError = 'Oops :( Please use at least 6 characters for your password.';
       renderCurrentPage();
       return;
     }
 
     if (password !== confirmPassword) {
-      authError = 'Passwords do not match.';
+      authError = "Oops :( Those passwords don't match.";
       renderCurrentPage();
       return;
     }
@@ -1565,7 +1600,7 @@ async function handleAuthSubmit() {
       authDraft = { email: '', password: '', confirmPassword: '' };
     }
   } catch (error) {
-    authError = error.message || `Unable to ${authFormMode === 'signup' ? 'sign up' : 'log in'} right now.`;
+    authError = getFriendlyAuthError(error, authFormMode === 'signup' ? 'sign up' : 'log in');
   } finally {
     isAuthSubmitting = false;
     renderCurrentPage();
@@ -1603,7 +1638,7 @@ async function handlePasswordReset() {
   authNotice = '';
 
   if (!email) {
-    authError = 'Enter your email first, then request a reset link.';
+    authError = 'Oops :( Enter your email first, then request a reset link.';
     renderCurrentPage();
     return;
   }
@@ -1615,7 +1650,7 @@ async function handlePasswordReset() {
     await sendFirebasePasswordReset(email);
     authNotice = 'Password reset email sent. Check your inbox.';
   } catch (error) {
-    authError = error.message || 'Unable to send a reset email right now.';
+    authError = getFriendlyAuthError(error, 'send the reset email');
   } finally {
     isAuthSubmitting = false;
     renderCurrentPage();
