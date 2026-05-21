@@ -65,11 +65,17 @@ public class FirestoreScanHistoryService {
             summaryDocument.put("sender", summary.sender());
             summaryDocument.put("subjectSnippet", summary.subjectSnippet());
             summaryDocument.put("urlCount", summary.urlCount());
+            summaryDocument.put("extractionSource", summary.extractionSource());
+            summaryDocument.put("provider", summary.provider());
+            summaryDocument.put("messageId", summary.messageId());
             document.put("requestSummary", summaryDocument);
             document.put("overallRiskScore", payload.overallRiskScore());
             document.put("sender", payload.sender());
             document.put("subject", payload.subject());
             document.put("urlCount", payload.urlCount());
+            document.put("extractionSource", payload.extractionSource());
+            document.put("provider", payload.provider());
+            document.put("messageId", payload.messageId());
 
             return firestore.collection(COLLECTION).add(document).get().getId();
         } catch (Exception exception) {
@@ -170,7 +176,10 @@ public class FirestoreScanHistoryService {
         HistoryRequestSummary summary = new HistoryRequestSummary(
             summaryMap == null ? null : (String) summaryMap.get("sender"),
             summaryMap == null ? null : (String) summaryMap.get("subjectSnippet"),
-            summaryMap == null || summaryMap.get("urlCount") == null ? 0 : ((Number) summaryMap.get("urlCount")).intValue()
+            summaryMap == null || summaryMap.get("urlCount") == null ? 0 : ((Number) summaryMap.get("urlCount")).intValue(),
+            valueFromSummaryOrSnapshot(summaryMap, snapshot, "extractionSource"),
+            valueFromSummaryOrSnapshot(summaryMap, snapshot, "provider"),
+            valueFromSummaryOrSnapshot(summaryMap, snapshot, "messageId")
         );
 
         Number riskScore = (Number) snapshot.get("overallRiskScore");
@@ -185,8 +194,19 @@ public class FirestoreScanHistoryService {
             riskScore == null ? 0 : riskScore.intValue(),
             snapshot.getString("sender"),
             snapshot.getString("subject"),
-            urlCount == null ? 0 : urlCount.intValue()
+            urlCount == null ? 0 : urlCount.intValue(),
+            summary.extractionSource(),
+            summary.provider(),
+            summary.messageId()
         );
+    }
+
+    private String valueFromSummaryOrSnapshot(Map<String, Object> summaryMap, DocumentSnapshot snapshot, String key) {
+        Object summaryValue = summaryMap == null ? null : summaryMap.get(key);
+        if (summaryValue instanceof String value) {
+            return value;
+        }
+        return snapshot.getString(key);
     }
 
     private String encodeCursor(String requestedAt) {

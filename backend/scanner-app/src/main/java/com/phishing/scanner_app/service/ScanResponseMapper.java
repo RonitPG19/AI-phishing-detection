@@ -18,6 +18,17 @@ import java.util.Map;
 public class ScanResponseMapper {
 
     public CachedScanPayload toCachedPayload(EmailScanReport report, String reportId, String scannedAt) {
+        return toCachedPayload(report, reportId, scannedAt, null, null, null);
+    }
+
+    public CachedScanPayload toCachedPayload(
+        EmailScanReport report,
+        String reportId,
+        String scannedAt,
+        String extractionSource,
+        String provider,
+        String messageId
+    ) {
         return new CachedScanPayload(
             report.subject(),
             report.sender(),
@@ -28,6 +39,9 @@ public class ScanResponseMapper {
             reportId,
             report.aiAnalysis(),
             scannedAt,
+            extractionSource,
+            provider,
+            messageId,
             report.attachments()
         );
     }
@@ -44,7 +58,14 @@ public class ScanResponseMapper {
     public HistoryRequestSummary toRequestSummary(CachedScanPayload payload) {
         String subject = payload.subject() == null ? "" : payload.subject();
         String subjectSnippet = subject.length() <= 120 ? subject : subject.substring(0, 120);
-        return new HistoryRequestSummary(payload.sender(), subjectSnippet, payload.urlCount());
+        return new HistoryRequestSummary(
+            payload.sender(),
+            subjectSnippet,
+            payload.urlCount(),
+            payload.extractionSource(),
+            payload.provider(),
+            payload.messageId()
+        );
     }
 
     public static String findingId(String category, int index) {

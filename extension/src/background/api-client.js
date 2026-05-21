@@ -65,6 +65,7 @@ function buildApiPayload(payload = {}) {
     headers: normalizeHeaders(payload.headers),
     links: normalizeLinks(payload.links),
     provider: provider || 'google',
+    extractionSource: String(metadata.source || '').trim(),
     messageId: includeAttachments ? resolvedMessageId : '',
     query: String(payload.query || '').trim()
   };
@@ -206,8 +207,8 @@ function mapApiResultToExtensionShape(apiResult = {}, originalPayload = {}) {
   const metadata = originalPayload.metadata && typeof originalPayload.metadata === 'object'
     ? originalPayload.metadata
     : {};
-  const extractionSource = metadata.source || (metadata.messageId || originalPayload.messageId ? 'provider-api' : 'dom');
-  const extractionProvider = metadata.provider || originalPayload.provider || '';
+  const extractionSource = apiResult.extractionSource || metadata.source || (metadata.messageId || originalPayload.messageId ? 'provider-api' : 'dom');
+  const extractionProvider = apiResult.provider || metadata.provider || originalPayload.provider || '';
   const sections = normalizeApiSections(apiResult.sections, apiResult.headerInspectionResult, apiResult.findings, apiResult.attachments);
   const issueCount = Object.values(sections).reduce((count, section) => count + (section.issues?.length || 0), 0);
 
@@ -215,7 +216,7 @@ function mapApiResultToExtensionShape(apiResult = {}, originalPayload = {}) {
     source: 'api',
     extractionSource,
     extractionProvider,
-    messageId: metadata.messageId || '',
+    messageId: apiResult.messageId || metadata.messageId || '',
     status: 'completed',
     overallThreat: riskLabelFromScore(overallRiskScore),
     overallRiskScore,

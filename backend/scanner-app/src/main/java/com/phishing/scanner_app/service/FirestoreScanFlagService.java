@@ -20,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -57,17 +58,19 @@ public class FirestoreScanFlagService {
         int effectiveLimit = Math.clamp(limit, 1, 50);
 
         try {
-            Query query = firestore.collection(COLLECTION).whereEqualTo("userId", userId);
-            if (cursor != null && !cursor.isBlank()) {
-                query = query.whereLessThan("createdAt", decodeCursor(cursor));
-            }
-
-            List<QueryDocumentSnapshot> documents = query
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .limit((int) (effectiveLimit + 1L))
+            String cursorTimestamp = cursor == null || cursor.isBlank() ? null : decodeCursor(cursor);
+            List<QueryDocumentSnapshot> documents = firestore.collection(COLLECTION)
+                .whereEqualTo("userId", userId)
                 .get()
                 .get()
-                .getDocuments();
+                .getDocuments()
+                .stream()
+                .filter(document -> cursorTimestamp == null || nullToEmpty(document.getString("createdAt")).compareTo(cursorTimestamp) < 0)
+                .sorted(Comparator.comparing(
+                    (QueryDocumentSnapshot document) -> nullToEmpty(document.getString("createdAt"))
+                ).reversed())
+                .limit((long) effectiveLimit + 1L)
+                .toList();
 
             List<FlagResponse> items = new ArrayList<>();
             for (int index = 0; index < Math.min(documents.size(), effectiveLimit); index++) {
@@ -217,5 +220,9 @@ public class FirestoreScanFlagService {
 
     private String decodeCursor(String cursor) {
         return new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
+    }
+
+    private String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 }

@@ -6,6 +6,7 @@ const STORAGE_KEYS = {
   AUTH_CONFIG: 'tribunal_auth_config',
   AUTH_SESSION: 'tribunal_auth_session',
   SCAN_HISTORY: 'tribunal_history',
+  SUBMITTED_FEEDBACK_FLAGS: 'tribunal_submitted_feedback_flags',
   WIDGET_STATE: 'tribunal_widget_state',
   WIDGET_PREFERENCES: 'tribunal_widget_preferences',
   LAST_SCAN_DEBUG: 'tribunal_last_scan_debug'
@@ -29,6 +30,7 @@ const DEFAULT_SCAN_DEBUG = {
 };
 
 const DEFAULT_SCAN_HISTORY = [];
+const DEFAULT_SUBMITTED_FEEDBACK_FLAGS = {};
 
 const DEFAULT_AUTH_SESSION = {
   accessToken: '',
@@ -114,6 +116,32 @@ export async function addScanHistoryEntry(entry) {
 
 export async function clearScanHistory() {
   await chrome.storage.local.remove(STORAGE_KEYS.SCAN_HISTORY);
+}
+
+export async function getSubmittedFeedbackFlags() {
+  const result = await chrome.storage.local.get(STORAGE_KEYS.SUBMITTED_FEEDBACK_FLAGS);
+  const flags = result[STORAGE_KEYS.SUBMITTED_FEEDBACK_FLAGS];
+  return flags && typeof flags === 'object' && !Array.isArray(flags)
+    ? flags
+    : DEFAULT_SUBMITTED_FEEDBACK_FLAGS;
+}
+
+export async function saveSubmittedFeedbackFlag(reportId, flag) {
+  const normalizedReportId = String(reportId || '').trim();
+  if (!normalizedReportId) {
+    return;
+  }
+
+  const flags = await getSubmittedFeedbackFlags();
+  await chrome.storage.local.set({
+    [STORAGE_KEYS.SUBMITTED_FEEDBACK_FLAGS]: {
+      ...flags,
+      [normalizedReportId]: {
+        ...flag,
+        reportId: normalizedReportId
+      }
+    }
+  });
 }
 
 export async function getWidgetState() {

@@ -92,6 +92,9 @@ public class FirestoreReportService {
         document.put("subject", report.subject());
         document.put("sender", report.sender());
         document.put("urlCount", report.urlCount());
+        document.put("extractionSource", extractionSource(request));
+        document.put("provider", normalizeProvider(request.getProvider()));
+        document.put("messageId", blankToNull(request.getMessageId()));
         document.put("overallRiskScore", report.overallRiskScore());
         document.put("headerInspectionResult", Map.of(
             "spfFail", report.headerInspectionResult().spfFail,
@@ -261,5 +264,44 @@ public class FirestoreReportService {
         mapped.put("findings", mapFindings(categoryName, category.findings()));
         mapped.put("scoreBreakdown", category.scoreBreakdown());
         return mapped;
+    }
+
+    private String extractionSource(EmailRequest request) {
+        String explicitSource = normalizeExtractionSource(request.getExtractionSource());
+        if (explicitSource != null) {
+            return explicitSource;
+        }
+        return hasMailboxIdentifier(request) ? "provider-api" : "dom";
+    }
+
+    private boolean hasMailboxIdentifier(EmailRequest request) {
+        return !isBlank(request.getMessageId()) || !isBlank(request.getQuery());
+    }
+
+    private String normalizeProvider(String provider) {
+        if (provider == null || provider.isBlank()) {
+            return null;
+        }
+        String normalized = provider.trim().toLowerCase();
+        return "gmail".equals(normalized) ? "google" : normalized;
+    }
+
+    private String blankToNull(String value) {
+        return isBlank(value) ? null : value.trim();
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private String normalizeExtractionSource(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalized = value.trim().toLowerCase();
+        if ("provider-api".equals(normalized) || "dom".equals(normalized)) {
+            return normalized;
+        }
+        return null;
     }
 }

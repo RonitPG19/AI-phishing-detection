@@ -4,8 +4,10 @@ import {
   getAuthSession,
   getLastScanDebug,
   getScanHistory,
+  getSubmittedFeedbackFlags,
   saveScanHistory,
   saveAuthSession,
+  saveSubmittedFeedbackFlag,
   saveWidgetPreferences
 } from '../shared/storage.js';
 import { RUNTIME_MESSAGES } from '../shared/constants.js';
@@ -104,6 +106,8 @@ let feedbackIndexState = {
   loading: false,
   byReportId: {}
 };
+let feedbackDraftByReport = {};
+let feedbackThankYouPageByReport = {};
 
 const SCAN_STAGES = ['Extracting', 'Sending', 'Analyzing', 'Finalizing'];
 
@@ -282,6 +286,16 @@ function getExtractionSourceLabel(result) {
     return 'Current tab DOM';
   }
 
+  // Backward compatibility: older history entries may not include extractionSource,
+  // but a stored mailbox messageId still proves provider API extraction.
+  if (!source && result?.messageId && (provider === 'google' || provider === 'gmail')) {
+    return 'Gmail API';
+  }
+
+  if (!source && result?.messageId && provider) {
+    return 'Mailbox API';
+  }
+
   return 'Not recorded';
 }
 
@@ -293,6 +307,20 @@ function setFeedbackState(reportId, nextState = {}) {
   feedbackStateByReport[reportId] = {
     ...getFeedbackState(reportId),
     ...nextState
+  };
+}
+
+function getFeedbackDraft(reportId = '') {
+  return feedbackDraftByReport[reportId] || {
+    reasonCode: 'MISCLASSIFIED',
+    comment: ''
+  };
+}
+
+function setFeedbackDraft(reportId, nextDraft = {}) {
+  feedbackDraftByReport[reportId] = {
+    ...getFeedbackDraft(reportId),
+    ...nextDraft
   };
 }
 
@@ -370,10 +398,15 @@ async function ensureFeedbackIndexLoaded() {
   }
 
   feedbackIndexState.loading = true;
+  const cachedFlags = await getSubmittedFeedbackFlags().catch(() => ({}));
+  feedbackIndexState.byReportId = {
+    ...feedbackIndexState.byReportId,
+    ...cachedFlags
+  };
 
   try {
     const flags = await fetchMyFlags();
-    const byReportId = {};
+    const byReportId = { ...cachedFlags };
 
     flags.forEach((flag) => {
       const reportId = String(flag?.reportId || '').trim();
@@ -397,7 +430,9 @@ async function ensureFeedbackIndexLoaded() {
     feedbackIndexState.byReportId = byReportId;
     feedbackIndexState.loaded = true;
   } catch {
-    // Keep silent here; feedback submit path already provides explicit errors.
+    // Keep cached submitted feedback visible even if the remote lookup is unavailable.
+    feedbackIndexState.byReportId = cachedFlags;
+    feedbackIndexState.loaded = true;
   } finally {
     feedbackIndexState.loading = false;
     renderCurrentPage();
@@ -453,6 +488,14 @@ function renderFeedbackPanel(result) {
     ensureFeedbackIndexLoaded();
   }
 
+  const state = getFeedbackState(reportId);
+  if (state.tone === 'success' && state.message && feedbackThankYouPageByReport[reportId] === currentPage) {
+    return `
+    <div class="auth-card" style="padding:12px;margin-top:10px;">
+      <div class="auth-message auth-message-success">${escapeHtml(state.message)}</div>
+    </div>`;
+  }
+
   const existingFlag = feedbackIndexState.byReportId[reportId] || null;
   if (existingFlag) {
     const reasonLabel = String(existingFlag.reasonCode || 'feedback').replace(/_/g, ' ').toLowerCase();
@@ -463,11 +506,11 @@ function renderFeedbackPanel(result) {
     </div>`;
   }
 
-  const state = getFeedbackState(reportId);
+  const draft = getFeedbackDraft(reportId);
   const statusLine = state.message
     ? `<div class="auth-message ${state.tone === 'success' ? 'auth-message-success' : 'auth-message-error'}">${escapeHtml(state.message)}</div>`
     : '';
-  const checkingLine = !feedbackIndexState.loaded
+  const checkingLine = feedbackIndexState.loading
     ? '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Checking if feedback was already submitted...</div>'
     : '';
 
@@ -477,12 +520,12 @@ function renderFeedbackPanel(result) {
       ${checkingLine}
       <div style="display:grid;grid-template-columns:1fr;gap:8px;" class="feedback-panel" data-report-id="${escapeHtml(reportId)}">
         <select class="auth-input feedback-reason" ${state.submitting ? 'disabled' : ''}>
-          <option value="MISCLASSIFIED">Misclassified result</option>
-          <option value="FALSE_POSITIVE">False positive</option>
-          <option value="FALSE_NEGATIVE">False negative</option>
-          <option value="NEEDS_REVIEW">Needs review</option>
+          <option value="MISCLASSIFIED" ${draft.reasonCode === 'MISCLASSIFIED' ? 'selected' : ''}>Misclassified result</option>
+          <option value="FALSE_POSITIVE" ${draft.reasonCode === 'FALSE_POSITIVE' ? 'selected' : ''}>False positive</option>
+          <option value="FALSE_NEGATIVE" ${draft.reasonCode === 'FALSE_NEGATIVE' ? 'selected' : ''}>False negative</option>
+          <option value="NEEDS_REVIEW" ${draft.reasonCode === 'NEEDS_REVIEW' ? 'selected' : ''}>Needs review</option>
         </select>
-        <input class="auth-input feedback-comment" type="text" maxlength="500" placeholder="Optional comment (what looked wrong?)" ${state.submitting ? 'disabled' : ''} />
+        <input class="auth-input feedback-comment" type="text" maxlength="500" placeholder="Optional comment (what looked wrong?)" value="${escapeHtml(draft.comment || '')}" ${state.submitting ? 'disabled' : ''} />
         <button class="btn-secondary" data-submit-feedback ${state.submitting ? 'disabled' : ''}>
           ${state.submitting ? 'Sending feedback...' : 'Send Feedback'}
         </button>
@@ -563,10 +606,14 @@ function mapRemoteSections(sections = {}, attachments = []) {
 
 function mapRemoteHistoryItemToHistoryEntry(item = {}) {
   const score = Number(item.overallRiskScore) || 0;
+  const provider = item.provider || item.requestSummary?.provider || item.requestSummary?.sourceProvider || item.requestSummary?.mailProvider || '';
+  const messageId = item.messageId || item.requestSummary?.messageId || '';
+  const extractionSource = item.extractionSource || item.requestSummary?.extractionSource || (messageId ? 'provider-api' : '');
   return {
     source: 'api',
-    extractionSource: item.messageId ? 'provider-api' : '',
-    extractionProvider: item.provider || '',
+    extractionSource,
+    extractionProvider: provider,
+    messageId,
     status: 'completed',
     overallThreat: threatFromScore(score),
     overallRiskScore: score,
@@ -585,11 +632,15 @@ function mapRemoteHistoryItemToHistoryEntry(item = {}) {
 
 function mapRemoteReportToHistoryEntry(report = {}, fallback = {}) {
   const score = Number(report.overallRiskScore ?? fallback.overallRiskScore) || 0;
+  const provider = report.provider || report.requestSummary?.provider || report.requestSummary?.sourceProvider || report.requestSummary?.mailProvider || fallback.extractionProvider || '';
+  const messageId = report.messageId || report.requestSummary?.messageId || fallback.messageId || '';
+  const extractionSource = report.extractionSource || report.requestSummary?.extractionSource || fallback.extractionSource || (messageId ? 'provider-api' : '');
   return {
     ...fallback,
     source: 'api',
-    extractionSource: report.messageId || fallback.messageId ? 'provider-api' : fallback.extractionSource || '',
-    extractionProvider: report.provider || fallback.extractionProvider || '',
+    extractionSource,
+    extractionProvider: provider,
+    messageId,
     status: 'completed',
     overallThreat: threatFromScore(score),
     overallRiskScore: score,
@@ -612,15 +663,27 @@ function getPhishingApiRoot(endpoint = '') {
 
 function mergeHistory(localHistory = [], remoteHistory = []) {
   const merged = [...localHistory];
-  const seenKeys = new Set(
-    merged.map((entry) => entry.reportId || `${entry.timestamp || ''}::${entry.emailSubject || ''}`)
+  const indexByKey = new Map(
+    merged.map((entry, index) => [entry.reportId || `${entry.timestamp || ''}::${entry.emailSubject || ''}`, index])
   );
 
   remoteHistory.forEach((entry) => {
     const key = entry.reportId || `${entry.timestamp || ''}::${entry.emailSubject || ''}`;
-    if (!seenKeys.has(key)) {
+    if (indexByKey.has(key)) {
+      const index = indexByKey.get(key);
+      const existing = merged[index] || {};
+      merged[index] = {
+        ...entry,
+        ...existing,
+        extractionSource: existing.extractionSource || entry.extractionSource || '',
+        extractionProvider: existing.extractionProvider || entry.extractionProvider || '',
+        messageId: existing.messageId || entry.messageId || '',
+        historyId: existing.historyId || entry.historyId || null,
+        reportId: existing.reportId || entry.reportId || null
+      };
+    } else {
       merged.push(entry);
-      seenKeys.add(key);
+      indexByKey.set(key, merged.length - 1);
     }
   });
 
@@ -798,7 +861,8 @@ async function fetchRemoteReport(reportId) {
 
 async function ensureHistoryDetailLoaded(index, history) {
   const entry = history[index];
-  if (!entry || entry.detailLoaded || !entry.reportId) {
+  const needsSourceRefresh = entry?.detailLoaded && entry?.reportId && !entry?.extractionSource && !entry?.messageId;
+  if (!entry || (!needsSourceRefresh && entry.detailLoaded) || !entry.reportId) {
     return entry;
   }
 
@@ -1831,6 +1895,8 @@ async function handleLogout() {
     await syncAuthState();
     resetFeedbackIndexState();
     feedbackStateByReport = {};
+    feedbackDraftByReport = {};
+    feedbackThankYouPageByReport = {};
     remoteHistoryHydrated = false;
     authNotice = 'Logged out locally.';
     navigateTo('profile');
@@ -1881,8 +1947,9 @@ async function handleSubmitFeedback(eventTarget) {
 
   const reasonSelect = panel.querySelector('.feedback-reason');
   const commentInput = panel.querySelector('.feedback-comment');
-  const reasonCode = String(reasonSelect?.value || 'MISCLASSIFIED').trim();
-  const comment = String(commentInput?.value || '').trim();
+  const draft = getFeedbackDraft(reportId);
+  const reasonCode = String(reasonSelect?.value || draft.reasonCode || 'MISCLASSIFIED').trim();
+  const comment = String(commentInput?.value || draft.comment || '').trim();
 
   setFeedbackState(reportId, {
     submitting: true,
@@ -1892,17 +1959,22 @@ async function handleSubmitFeedback(eventTarget) {
   renderCurrentPage();
 
   try {
-    await createReportFlag(reportId, reasonCode, comment);
-    feedbackIndexState.byReportId[reportId] = {
+    const createdFlag = await createReportFlag(reportId, reasonCode, comment);
+    const storedFlag = {
+      ...createdFlag,
       reportId,
       reasonCode,
-      createdAt: new Date().toISOString(),
-      status: 'open'
+      createdAt: createdFlag?.createdAt || new Date().toISOString(),
+      status: createdFlag?.status || 'open'
     };
+    feedbackIndexState.byReportId[reportId] = storedFlag;
     feedbackIndexState.loaded = true;
+    feedbackThankYouPageByReport[reportId] = currentPage;
+    await saveSubmittedFeedbackFlag(reportId, storedFlag);
+    delete feedbackDraftByReport[reportId];
     setFeedbackState(reportId, {
       submitting: false,
-      message: 'Thanks, feedback submitted.',
+      message: 'Thanks, your feedback was submitted.',
       tone: 'success'
     });
   } catch (error) {
@@ -2097,6 +2169,15 @@ document.addEventListener('click', async (event) => {
 });
 
 document.addEventListener('change', (event) => {
+  if (event.target.classList?.contains('feedback-reason')) {
+    const panel = event.target.closest('.feedback-panel');
+    const reportId = String(panel?.dataset?.reportId || '').trim();
+    if (reportId) {
+      setFeedbackDraft(reportId, { reasonCode: String(event.target.value || 'MISCLASSIFIED') });
+    }
+    return;
+  }
+
   if (currentPage !== 'settings') {
     return;
   }
@@ -2131,6 +2212,15 @@ document.addEventListener('change', (event) => {
 });
 
 document.addEventListener('input', (event) => {
+  if (event.target.classList?.contains('feedback-comment')) {
+    const panel = event.target.closest('.feedback-panel');
+    const reportId = String(panel?.dataset?.reportId || '').trim();
+    if (reportId) {
+      setFeedbackDraft(reportId, { comment: String(event.target.value || '') });
+    }
+    return;
+  }
+
   if (event.target.id === 'auth-email') {
     authDraft.email = event.target.value;
     return;
@@ -2173,6 +2263,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     if (!hasAuthSession()) {
       resetFeedbackIndexState();
       feedbackStateByReport = {};
+      feedbackDraftByReport = {};
+      feedbackThankYouPageByReport = {};
     } else if (!feedbackIndexState.loaded && !feedbackIndexState.loading) {
       ensureFeedbackIndexLoaded();
     }

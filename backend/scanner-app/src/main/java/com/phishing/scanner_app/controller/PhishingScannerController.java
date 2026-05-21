@@ -36,6 +36,7 @@ public class PhishingScannerController {
         System.out.println(
             "Scan email request: provider=" + request.getProvider()
             + ", messageId=" + request.getMessageId()
+            + ", extractionSource=" + request.getExtractionSource()
             + ", hasBody=" + request.hasBodyContent()
             + ", hasLinks=" + request.hasLinks()
         );

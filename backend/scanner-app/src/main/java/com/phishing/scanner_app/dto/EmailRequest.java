@@ -29,6 +29,8 @@ public class EmailRequest {
 
     private String provider = "google";
 
+    private String extractionSource;
+
     /**
      * Extracted links from the email, each with href and display text.
      * When bodyHtml/bodyText are absent, these links are scanned directly.
@@ -134,5 +136,13 @@ public class EmailRequest {
 
     public void setProvider(String provider) {
         this.provider = provider;
+    }
+
+    public String getExtractionSource() {
+        return extractionSource;
+    }
+
+    public void setExtractionSource(String extractionSource) {
+        this.extractionSource = extractionSource;
     }
 }

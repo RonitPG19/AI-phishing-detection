@@ -77,16 +77,17 @@ public class ScanOrchestrationService {
             Optional<FirestoreScanCacheService.ScanCacheEntry> cachedEntry = cacheService.get(cacheKey);
             if (cachedEntry.isPresent()) {
                 FirestoreScanCacheService.ScanCacheEntry entry = cachedEntry.get();
+                CachedScanPayload payload = withRequestMetadata(entry.payload(), request);
                 cacheService.recordCacheHit(cacheKey);
                 String historyId = historyService.saveHistory(
                     userId,
-                    entry.payload().reportId(),
+                    payload.reportId(),
                     cacheKey,
                     "cache_hit",
-                    entry.payload(),
+                    payload,
                     now
                 );
-                return entry.payload().toScanResponse(true, entry.expiresAt(), historyId);
+                return payload.toScanResponse(true, entry.expiresAt(), historyId);
             }
         }
 
@@ -145,7 +146,14 @@ public class ScanOrchestrationService {
 
         EmailScanReport freshReport = scannerService.scanEmail(request, safeBrowsingApiKey, attachmentResults);
         String reportId = firestoreReportService.savePhishingReport(request, freshReport);
-        CachedScanPayload payload = responseMapper.toCachedPayload(freshReport, reportId, now.toString());
+        CachedScanPayload payload = responseMapper.toCachedPayload(
+            freshReport,
+            reportId,
+            now.toString(),
+            extractionSource(request),
+            normalizeProvider(request.getProvider()),
+            blankToNull(request.getMessageId())
+        );
 
         String cacheExpiresAt = null;
         if (cacheEnabled) {
@@ -226,6 +234,67 @@ public class ScanOrchestrationService {
 
     private String normalize(String value) {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeProvider(String provider) {
+        String normalized = normalize(provider);
+        if (normalized.isBlank()) {
+            return null;
+        }
+        return "gmail".equals(normalized) ? "google" : normalized;
+    }
+
+    private String extractionSource(EmailRequest request) {
+        String explicitSource = normalizeExtractionSource(request.getExtractionSource());
+        if (explicitSource != null) {
+            return explicitSource;
+        }
+        return hasMailboxIdentifier(request) ? "provider-api" : "dom";
+    }
+
+    private boolean hasMailboxIdentifier(EmailRequest request) {
+        return !normalize(request.getMessageId()).isBlank() || !normalize(request.getQuery()).isBlank();
+    }
+
+    private String blankToNull(String value) {
+        String normalized = value == null ? "" : value.trim();
+        return normalized.isBlank() ? null : normalized;
+    }
+
+    private String normalizeExtractionSource(String value) {
+        String normalized = normalize(value);
+        if ("provider-api".equals(normalized) || "dom".equals(normalized)) {
+            return normalized;
+        }
+        return null;
+    }
+
+    private CachedScanPayload withRequestMetadata(CachedScanPayload payload, EmailRequest request) {
+        String extractionSource = payload.extractionSource() == null || payload.extractionSource().isBlank()
+            ? extractionSource(request)
+            : payload.extractionSource();
+        String provider = payload.provider() == null || payload.provider().isBlank()
+            ? normalizeProvider(request.getProvider())
+            : payload.provider();
+        String messageId = payload.messageId() == null || payload.messageId().isBlank()
+            ? blankToNull(request.getMessageId())
+            : payload.messageId();
+
+        return new CachedScanPayload(
+            payload.subject(),
+            payload.sender(),
+            payload.urlCount(),
+            payload.sections(),
+            payload.headerInspectionResult(),
+            payload.overallRiskScore(),
+            payload.reportId(),
+            payload.aiAnalysis(),
+            payload.scannedAt(),
+            extractionSource,
+            provider,
+            messageId,
+            payload.attachments()
+        );
     }
 
     private boolean shouldResolveMessageIdFirst(EmailRequest request) {
