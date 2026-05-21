@@ -98,6 +98,12 @@ let mailboxMessages = [];
 let mailboxLoading = false;
 let mailboxError = '';
 let pageRenderToken = 0;
+let feedbackStateByReport = {};
+let feedbackIndexState = {
+  loaded: false,
+  loading: false,
+  byReportId: {}
+};
 
 const SCAN_STAGES = ['Extracting', 'Sending', 'Analyzing', 'Finalizing'];
 
@@ -277,6 +283,212 @@ function getExtractionSourceLabel(result) {
   }
 
   return 'Not recorded';
+}
+
+function getFeedbackState(reportId = '') {
+  return feedbackStateByReport[reportId] || { message: '', tone: '', submitting: false };
+}
+
+function setFeedbackState(reportId, nextState = {}) {
+  feedbackStateByReport[reportId] = {
+    ...getFeedbackState(reportId),
+    ...nextState
+  };
+}
+
+function resetFeedbackIndexState() {
+  feedbackIndexState = {
+    loaded: false,
+    loading: false,
+    byReportId: {}
+  };
+}
+
+function normalizeFeedbackError(error) {
+  const message = String(error?.message || error || '');
+  if (/401|unauthorized|forbidden/i.test(message)) {
+    return 'Please log in again before sending feedback.';
+  }
+  if (/409|already exists|open flag/i.test(message)) {
+    return 'You already submitted this feedback for the report.';
+  }
+  return message || 'Could not submit feedback right now.';
+}
+
+async function fetchMyFlags() {
+  const session = await getAuthSession();
+  if (!session?.accessToken) {
+    return [];
+  }
+
+  const config = await getApiConfig();
+  const root = getPhishingApiRoot(config?.endpoint || '');
+  if (!root) {
+    return [];
+  }
+
+  let cursor = '';
+  const collected = [];
+  const maxPages = 3;
+
+  for (let page = 0; page < maxPages; page += 1) {
+    const suffix = cursor ? `?limit=50&cursor=${encodeURIComponent(cursor)}` : '?limit=50';
+    const response = await fetch(`${root}/flags/mine${suffix}`, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${session.accessToken}`
+      }
+    });
+
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok) {
+      throw new Error(payload?.error || payload?.message || `Request failed with status ${response.status}`);
+    }
+
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    collected.push(...items);
+
+    cursor = String(payload?.nextCursor || '').trim();
+    if (!cursor) {
+      break;
+    }
+  }
+
+  return collected;
+}
+
+async function ensureFeedbackIndexLoaded() {
+  if (feedbackIndexState.loaded || feedbackIndexState.loading || !hasAuthSession()) {
+    return;
+  }
+
+  feedbackIndexState.loading = true;
+
+  try {
+    const flags = await fetchMyFlags();
+    const byReportId = {};
+
+    flags.forEach((flag) => {
+      const reportId = String(flag?.reportId || '').trim();
+      if (!reportId) {
+        return;
+      }
+
+      const current = byReportId[reportId];
+      if (!current) {
+        byReportId[reportId] = flag;
+        return;
+      }
+
+      const currentTs = Date.parse(current?.createdAt || '');
+      const candidateTs = Date.parse(flag?.createdAt || '');
+      if (!Number.isNaN(candidateTs) && (Number.isNaN(currentTs) || candidateTs > currentTs)) {
+        byReportId[reportId] = flag;
+      }
+    });
+
+    feedbackIndexState.byReportId = byReportId;
+    feedbackIndexState.loaded = true;
+  } catch {
+    // Keep silent here; feedback submit path already provides explicit errors.
+  } finally {
+    feedbackIndexState.loading = false;
+    renderCurrentPage();
+  }
+}
+
+async function createReportFlag(reportId, reasonCode, comment = '') {
+  const session = await getAuthSession();
+  if (!session?.accessToken) {
+    throw new Error('Please log in first.');
+  }
+
+  const config = await getApiConfig();
+  const root = getPhishingApiRoot(config?.endpoint || '');
+  if (!root) {
+    throw new Error('Phishing API endpoint is not configured.');
+  }
+
+  const response = await fetch(`${root}/reports/${encodeURIComponent(reportId)}/flags`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session.accessToken}`
+    },
+    body: JSON.stringify({
+      reasonCode,
+      comment: String(comment || '').trim() || null
+    })
+  });
+
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok) {
+    throw new Error(payload?.error || payload?.message || `Request failed with status ${response.status}`);
+  }
+
+  return payload;
+}
+
+function renderFeedbackPanel(result) {
+  const reportId = String(result?.reportId || '').trim();
+  if (!reportId || !hasAuthSession()) {
+    return '';
+  }
+
+  if (!feedbackIndexState.loaded && !feedbackIndexState.loading) {
+    ensureFeedbackIndexLoaded();
+  }
+
+  const existingFlag = feedbackIndexState.byReportId[reportId] || null;
+  if (existingFlag) {
+    const reasonLabel = String(existingFlag.reasonCode || 'feedback').replace(/_/g, ' ').toLowerCase();
+    const submittedAt = existingFlag.createdAt ? formatTimestamp(existingFlag.createdAt) : 'just now';
+    return `
+    <div class="auth-card" style="padding:12px;margin-top:10px;">
+      <div class="auth-message auth-message-success">Feedback already submitted (${escapeHtml(reasonLabel)}), ${escapeHtml(submittedAt)}.</div>
+    </div>`;
+  }
+
+  const state = getFeedbackState(reportId);
+  const statusLine = state.message
+    ? `<div class="auth-message ${state.tone === 'success' ? 'auth-message-success' : 'auth-message-error'}">${escapeHtml(state.message)}</div>`
+    : '';
+  const checkingLine = !feedbackIndexState.loaded
+    ? '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Checking if feedback was already submitted...</div>'
+    : '';
+
+  return `
+    <div class="auth-card" style="padding:12px;margin-top:10px;">
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Think this result is off? Send feedback to improve model quality.</div>
+      ${checkingLine}
+      <div style="display:grid;grid-template-columns:1fr;gap:8px;" class="feedback-panel" data-report-id="${escapeHtml(reportId)}">
+        <select class="auth-input feedback-reason" ${state.submitting ? 'disabled' : ''}>
+          <option value="MISCLASSIFIED">Misclassified result</option>
+          <option value="FALSE_POSITIVE">False positive</option>
+          <option value="FALSE_NEGATIVE">False negative</option>
+          <option value="NEEDS_REVIEW">Needs review</option>
+        </select>
+        <input class="auth-input feedback-comment" type="text" maxlength="500" placeholder="Optional comment (what looked wrong?)" ${state.submitting ? 'disabled' : ''} />
+        <button class="btn-secondary" data-submit-feedback ${state.submitting ? 'disabled' : ''}>
+          ${state.submitting ? 'Sending feedback...' : 'Send Feedback'}
+        </button>
+      </div>
+      ${statusLine}
+    </div>`;
 }
 
 function normalizeSeverity(value = '') {
@@ -904,7 +1116,8 @@ function renderResultView(result) {
     <div class="results-actions">
       <button class="btn-secondary" id="copy-report-btn"><i data-icon="clipboard"></i> Copy Report</button>
       <button class="btn-secondary" id="scan-again-btn"><i data-icon="rotate-ccw"></i> Scan Again</button>
-    </div>`;
+    </div>
+    ${renderFeedbackPanel(result)}`;
 }
 
 function isMailboxConnected(provider) {
@@ -1018,7 +1231,7 @@ async function renderHistoryPage() {
       result = await ensureHistoryDetailLoaded(historyDetailIndex, history);
     }
     const issueCount = getIssueCount(result);
-    container.innerHTML = `<div class="page-enter"><button class="back-btn" id="history-back-btn"><i data-icon="arrow-left"></i> Back to History</button><div class="results-summary"><div class="results-threat-label">${escapeHtml(String(result.overallThreat || 'safe').toUpperCase())} RISK</div><div class="results-issue-count">${issueCount} issue${issueCount === 1 ? '' : 's'} found</div><div class="results-source">Analysis: ${escapeHtml(getResultSourceLabel(result))}</div><div class="results-source">Extraction: ${escapeHtml(getExtractionSourceLabel(result))}</div><p style="margin-top:4px;font-size:12px;color:var(--text-muted)">${escapeHtml(formatTimestamp(result.timestamp))} - ${escapeHtml(truncate(result.emailSubject || 'Current message', 52))}</p></div><div class="section-group">${Object.entries(result.sections || {}).map(([key, section]) => renderSection(key, section)).join('')}</div></div>`;
+    container.innerHTML = `<div class="page-enter"><button class="back-btn" id="history-back-btn"><i data-icon="arrow-left"></i> Back to History</button><div class="results-summary"><div class="results-threat-label">${escapeHtml(String(result.overallThreat || 'safe').toUpperCase())} RISK</div><div class="results-issue-count">${issueCount} issue${issueCount === 1 ? '' : 's'} found</div><div class="results-source">Analysis: ${escapeHtml(getResultSourceLabel(result))}</div><div class="results-source">Extraction: ${escapeHtml(getExtractionSourceLabel(result))}</div><p style="margin-top:4px;font-size:12px;color:var(--text-muted)">${escapeHtml(formatTimestamp(result.timestamp))} - ${escapeHtml(truncate(result.emailSubject || 'Current message', 52))}</p></div><div class="section-group">${Object.entries(result.sections || {}).map(([key, section]) => renderSection(key, section)).join('')}</div>${renderFeedbackPanel(result)}</div>`;
     injectIcons(container);
     return;
   }
@@ -1616,6 +1829,8 @@ async function handleLogout() {
   try {
     await logoutFromFirebaseAndFlask();
     await syncAuthState();
+    resetFeedbackIndexState();
+    feedbackStateByReport = {};
     remoteHistoryHydrated = false;
     authNotice = 'Logged out locally.';
     navigateTo('profile');
@@ -1655,6 +1870,50 @@ async function handlePasswordReset() {
     isAuthSubmitting = false;
     renderCurrentPage();
   }
+}
+
+async function handleSubmitFeedback(eventTarget) {
+  const panel = eventTarget.closest('.feedback-panel');
+  const reportId = String(panel?.dataset?.reportId || '').trim();
+  if (!reportId) {
+    return;
+  }
+
+  const reasonSelect = panel.querySelector('.feedback-reason');
+  const commentInput = panel.querySelector('.feedback-comment');
+  const reasonCode = String(reasonSelect?.value || 'MISCLASSIFIED').trim();
+  const comment = String(commentInput?.value || '').trim();
+
+  setFeedbackState(reportId, {
+    submitting: true,
+    message: '',
+    tone: ''
+  });
+  renderCurrentPage();
+
+  try {
+    await createReportFlag(reportId, reasonCode, comment);
+    feedbackIndexState.byReportId[reportId] = {
+      reportId,
+      reasonCode,
+      createdAt: new Date().toISOString(),
+      status: 'open'
+    };
+    feedbackIndexState.loaded = true;
+    setFeedbackState(reportId, {
+      submitting: false,
+      message: 'Thanks, feedback submitted.',
+      tone: 'success'
+    });
+  } catch (error) {
+    setFeedbackState(reportId, {
+      submitting: false,
+      message: normalizeFeedbackError(error),
+      tone: 'error'
+    });
+  }
+
+  renderCurrentPage();
 }
 
 async function copyReport() {
@@ -1752,6 +2011,11 @@ document.addEventListener('click', async (event) => {
 
   if (event.target.closest('#copy-report-btn')) {
     copyReport();
+    return;
+  }
+
+  if (event.target.closest('[data-submit-feedback]')) {
+    handleSubmitFeedback(event.target);
     return;
   }
 
@@ -1906,6 +2170,12 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   }
 
   syncAuthState().then(() => {
+    if (!hasAuthSession()) {
+      resetFeedbackIndexState();
+      feedbackStateByReport = {};
+    } else if (!feedbackIndexState.loaded && !feedbackIndexState.loading) {
+      ensureFeedbackIndexLoaded();
+    }
     authNotice = hasAuthSession() ? 'Mailbox connected successfully.' : authNotice;
     renderCurrentPage();
   });
@@ -1914,6 +2184,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 async function init() {
   const settings = getSettings();
   await syncAuthState();
+  if (hasAuthSession()) {
+    ensureFeedbackIndexLoaded();
+  }
   applyTheme(settings.theme);
   saveWidgetPreferences({ enabled: settings.floatingPopupEnabled });
   navigateTo(currentPage);
