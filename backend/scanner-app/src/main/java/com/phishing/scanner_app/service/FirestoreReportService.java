@@ -8,6 +8,7 @@ import com.google.cloud.firestore.QueryDocumentSnapshot;
 
 import com.phishing.scanner_app.dto.EmailRequest;
 import com.phishing.scanner_app.dto.LinkScanReport;
+import com.phishing.scanner_app.dto.AttachmentScanResponse;
 import com.phishing.scanner_app.model.CategoryResult;
 import com.phishing.scanner_app.model.EmailScanReport;
 import com.phishing.scanner_app.model.RiskFinding;
@@ -96,6 +97,7 @@ public class FirestoreReportService {
         document.put("provider", normalizeProvider(request.getProvider()));
         document.put("messageId", blankToNull(request.getMessageId()));
         document.put("overallRiskScore", report.overallRiskScore());
+        document.put("attachments", mapAttachments(report.attachments()));
         document.put("headerInspectionResult", Map.of(
             "spfFail", report.headerInspectionResult().spfFail,
             "dkimFail", report.headerInspectionResult().dkimFail,
@@ -264,6 +266,26 @@ public class FirestoreReportService {
         mapped.put("findings", mapFindings(categoryName, category.findings()));
         mapped.put("scoreBreakdown", category.scoreBreakdown());
         return mapped;
+    }
+
+    private List<Map<String, Object>> mapAttachments(List<AttachmentScanResponse> attachments) {
+        if (attachments == null) {
+            return List.of();
+        }
+
+        return attachments.stream()
+            .map(attachment -> {
+                Map<String, Object> mapped = new LinkedHashMap<>();
+                mapped.put("filename", attachment.filename());
+                mapped.put("declaredMimeType", attachment.declaredMimeType());
+                mapped.put("detectedMimeType", attachment.detectedMimeType());
+                mapped.put("verdict", attachment.verdict());
+                mapped.put("predictedBehavior", attachment.predictedBehavior());
+                mapped.put("technicalReason", attachment.technicalReason());
+                mapped.put("extractedUrls", attachment.extractedUrls());
+                return mapped;
+            })
+            .toList();
     }
 
     private String extractionSource(EmailRequest request) {

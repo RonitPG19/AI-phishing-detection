@@ -23,6 +23,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.Comparator;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -101,7 +102,23 @@ public class AttachmentScannerService {
         Path tempDir = null;
         try {
             tempDir = Files.createTempDirectory("attachment_scan_" + UUID.randomUUID());
-            Path filePath = tempDir.resolve(filename);
+            // Resolve target path under tempDir. The incoming filename may include
+            // directory separators (e.g. "taco/..") which don't yet exist. Also
+            // guard against path traversal attempts that escape the tempDir.
+            Path filePath = tempDir.resolve(filename).normalize();
+
+            // If normalization escapes the temp directory, fall back to using only
+            // the filename component to avoid writing outside of the sandbox.
+            if (!filePath.startsWith(tempDir)) {
+                filePath = tempDir.resolve(Path.of(filename).getFileName().toString()).normalize();
+            }
+
+            // Ensure parent directories exist (Files.write does not create them).
+            Path parent = filePath.getParent();
+            if (parent != null && !Files.exists(parent)) {
+                Files.createDirectories(parent);
+            }
+
             Files.write(filePath, content);
 
             Path resolvedScriptPath = resolveScriptPath();
@@ -199,9 +216,11 @@ public class AttachmentScannerService {
         } finally {
             if (tempDir != null) {
                 try {
-                    Files.walk(tempDir)
-                        .map(Path::toFile)
-                        .forEach(File::delete);
+                        // Delete children before parents to ensure directories are removed.
+                        Files.walk(tempDir)
+                            .sorted(Comparator.reverseOrder())
+                            .map(Path::toFile)
+                            .forEach(File::delete);
                 } catch (IOException e) {
                     logger.warn("Failed to clean up temp directory {}", tempDir, e);
                 }

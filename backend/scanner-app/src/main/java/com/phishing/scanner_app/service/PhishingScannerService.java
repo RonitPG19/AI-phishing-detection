@@ -253,11 +253,6 @@ public class PhishingScannerService {
             for (AttachmentScanResponse attachment : attachments) {
                 if ("Malicious".equalsIgnoreCase(attachment.verdict())) {
                     hasMaliciousAttachment = true;
-                    findings.add(new RiskFinding(
-                        "Attachment: " + attachment.filename(),
-                        "Malicious attachment detected: " + attachment.technicalReason(),
-                        Severity.HIGH
-                    ));
                 }
             }
         }
@@ -407,6 +402,7 @@ public class PhishingScannerService {
 
         for (RiskFinding f : findings) {
             String desc = f.description().toLowerCase();
+            String target = f.target().toLowerCase();
             int score = f.scoreContribution();
 
             if (desc.contains("blacklisted") || desc.contains("blacklist")) {
@@ -939,6 +935,7 @@ public class PhishingScannerService {
         // ── Process findings ──
         for (RiskFinding f : findings) {
             String desc = f.description().toLowerCase();
+            String target = defaultString(f.target(), "").toLowerCase();
             int score = f.scoreContribution();
 
             // BLACKLIST
@@ -994,7 +991,7 @@ public class PhishingScannerService {
             }
 
             // AI
-            if (desc.contains("[ai]")) {
+            if (desc.contains("[ai]") || target.contains("[ai]")) {
                 aiScore += score;
             }
         }
@@ -1016,7 +1013,7 @@ public class PhishingScannerService {
         authScore = Math.min(authScore, 15);
         socialScore = Math.min(socialScore, 15);
         urlScore = Math.min(urlScore, 5);
-        aiScore = Math.min(aiScore, 15);
+        aiScore = Math.min(aiScore, 40);
         whitelistScore = Math.max(whitelistScore, -20);
 
         // ── Total ──
@@ -1084,6 +1081,9 @@ public class PhishingScannerService {
                 cats.header().scoreBreakdown().put(k, e.getValue());
             } else if (k.equals("ai")) {
                 cats.body().scoreBreakdown().put(k, e.getValue());
+            } else if (k.equals("maliciousAttachment")) {
+                // Attachment findings are returned in the dedicated top-level attachments field.
+                continue;
             } else {
                 cats.links().scoreBreakdown().put(k, e.getValue());
             }
